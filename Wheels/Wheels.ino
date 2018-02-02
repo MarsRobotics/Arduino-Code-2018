@@ -51,14 +51,16 @@ const int IS_DRIVING = 3;
 
 //The state the robot is currently in
 int currentStatus = STOPPED;
-long driveStopTime = 0;
+
+//time robot will drive before stopping
+long driveTime = 0;
 
 //
 // Articualtion Constants
 //
 
 //We want to get articulation join within this range (degrees) from the target
-const int DELTA_START_RANGE = 8;
+const int DELTA_START_RANGE = 8;  //TODO ranges need to be diffrent
 const int DELTA_STOP_RANGE = 3;
 
 //When we are passing around the direction in which to articulate the wheels, we pass this value
@@ -66,7 +68,7 @@ const int ARTICULATION_DIRECTION_CLOCKWISE = -1;
 const int ARTICULATION_DIRECTION_NONE = 0;
 const int ARTICULATION_DIRECTION_COUNTER_CLOCKWISE = 1;
 
-const int ENCODER_POSITIONS = 400;
+const int ENCODER_POSITIONS = 400; //TODO, change moto id's
 
 //The speed 
 const double ARTICULATION_DRIVE_SPEED = 6260.0 / 7521.0;
@@ -79,7 +81,7 @@ bool motorInMotion[15];
 //
 
 // This node handle represents this arduino. 
-ros::NodeHandle sabertoothDriverNode;
+ros::NodeHandle sabertoothDriverNode; //TODO maybie?
 
 //
 // ROS Publishers
@@ -135,8 +137,8 @@ void newManualCommandCallback(const command2ros::ManualCommand& newManualCommand
   //Set the state of 
   if (wheelTarget.e_stop == true) {
     //TODO: Make this E_STOPPED for final product
-    currentStatus = STOPPED;
-    stopAllMotors(false);
+      currentStatus = STOPPED;
+    stopAllMotors(true);
   } 
   else if (needsToArticulate() == true) {
     currentStatus = ARTICULATING;
@@ -148,7 +150,7 @@ void newManualCommandCallback(const command2ros::ManualCommand& newManualCommand
 }
 
 void setActualArticulationValues(const command2ros::ManualCommand& articulationValues){
-  //Set articulation values
+  //Set articulation values //TODO weird code Ryan Kane is confused 
   wheelOffset.fl_articulation_angle = (int)(articulationValues.fl_articulation_angle - wheelStatus.fl_articulation_angle - wheelOffset.fl_articulation_angle);
   wheelOffset.ml_articulation_angle = (int)(articulationValues.ml_articulation_angle - wheelStatus.ml_articulation_angle - wheelOffset.ml_articulation_angle);
   wheelOffset.rl_articulation_angle = (int)(articulationValues.rl_articulation_angle - wheelStatus.rl_articulation_angle - wheelOffset.rl_articulation_angle);
@@ -174,6 +176,9 @@ void print(char* errorMsg){
 }
 
 void setupWheelStatus() {
+  //current wheel location: 0 is right of robot
+  //left side of robot starts under robot at 0 degrees, rolls out to 180
+  //right side of robot starts uner robot at 180 degrees, rolls out to 0
   wheelStatus.fl_articulation_angle = 0;
   wheelStatus.fr_articulation_angle = 180;
   wheelStatus.ml_articulation_angle = 0;
@@ -181,6 +186,7 @@ void setupWheelStatus() {
   wheelStatus.rl_articulation_angle = 0;
   wheelStatus.rr_articulation_angle = 180;
 
+  //Amount turned from last movement (start)?
   wheelOffset.fl_articulation_angle = 0;
   wheelOffset.fr_articulation_angle = 0;
   wheelOffset.ml_articulation_angle = 0;
@@ -258,62 +264,28 @@ void articulateAllWheels() {
 
   // Note: wheelTarget says it is the angle, but since we 
   // hacked at the last minute, it is actually time.
-  wheelArticulations[0] = wheelTarget.fl_articulation_angle;
-  wheelArticulations[1] = wheelTarget.fr_articulation_angle;
-  wheelArticulations[2] = wheelTarget.ml_articulation_angle;
-  wheelArticulations[3] = wheelTarget.mr_articulation_angle;
-  wheelArticulations[4] = wheelTarget.rl_articulation_angle;
-  wheelArticulations[5] = wheelTarget.rr_articulation_angle;
+  wheelArticulations[0] = wheelTarget.fl_articulation_time;   //TODO change all _angle => _time
+  wheelArticulations[1] = wheelTarget.fr_articulation_time;
+  wheelArticulations[2] = wheelTarget.ml_articulation_time;
+  wheelArticulations[3] = wheelTarget.mr_articulation_time;
+  wheelArticulations[4] = wheelTarget.rl_articulation_time;
+  wheelArticulations[5] = wheelTarget.rr_articulation_time;
 
   // Algorithm: "A nondeterministic-deterministic mergesort for Jaimiey" <3 
   boolean sorted = false;
-  unsigned long tries = 0;
-  while(!sorted) {
-
-    // Spin the random dial
-    for(int i = 0; i < 6; i++ ) {
-      int pos = random(0, 6);
-      int temp = wheelArticulations[i]; 
-      wheelArticulations[i] = wheelArticulations[pos];
-      wheelArticulations[pos] = temp;
-
-      int temp2 = wheelIds[i];
-      wheelIds[i] = wheelIds[pos];
-      wheelIds[pos] = temp2;
+  // Insertion sort
+  for (int j = 0; j < 6; j++){
+    int key = wheelArticulations[j];
+    int key2 = wheelIds[j];
+    int i = j - 1; 
+    while (i >= 0 && abs(wheelArticulations[i]) > abs(key)){
+      wheelArticulations[i + 1] = wheelArticulations[i];
+      wheelIds[i + 1] = wheelIds[i];
+      i = i - 1;
     }
 
-    // Check if we are correct
-    int last = wheelArticulations[0];
-    for(int i = 1; i < 6; i++ ) {
-      if(abs(last) < abs(wheelArticulations[i])) {
-        last = wheelArticulations[i];
-      }
-      else {
-        sorted = false;
-        break;
-      }
-    }
-
-    tries++;
-    if(tries > 720) {
-      // Insertion sort
-      for (int j = 0; j < 6; j++)
-      {
-        int key = wheelArticulations[j];
-        int key2 = wheelIds[j];
-        int i = j - 1; 
-        while (i >= 0 && abs(wheelArticulations[i]) > abs(key))
-        {
-          wheelArticulations[i + 1] = wheelArticulations[i];
-          wheelIds[i + 1] = wheelIds[i];
-          i = i - 1;
-        }
-
-        wheelArticulations[i + 1] = key;
-        wheelIds[i + 1] = key2;
-      }
-      sorted = true;
-    }
+    wheelArticulations[i + 1] = key;
+    wheelIds[i + 1] = key2;
   }
   // End Algorithm
 
@@ -602,22 +574,20 @@ void articulateWheel(int motorID, int direction) {
   }
 }
 
-//TODO: Rename to driveAllWheels
-void driveAllMotors() {
+void driveAllWheels() {
 
   //Set wheel speeds
-  driveMotor(FRONT_LEFT_DRIVE_MOTOR_ID, wheelTarget.fl_drive_speed*-1);
-  driveMotor(MIDDLE_LEFT_DRIVE_MOTOR_ID, wheelTarget.ml_drive_speed*-1);
-  driveMotor(REAR_LEFT_DRIVE_MOTOR_ID, wheelTarget.rl_drive_speed*-1);
+  driveWheel(FRONT_LEFT_DRIVE_MOTOR_ID, wheelTarget.fl_drive_speed*-1);
+  driveWheel(MIDDLE_LEFT_DRIVE_MOTOR_ID, wheelTarget.ml_drive_speed*-1);
+  driveWheel(REAR_LEFT_DRIVE_MOTOR_ID, wheelTarget.rl_drive_speed*-1);
 
-  driveMotor(FRONT_RIGHT_DRIVE_MOTOR_ID, wheelTarget.fr_drive_speed);
-  driveMotor(MIDDLE_RIGHT_DRIVE_MOTOR_ID, wheelTarget.mr_drive_speed);
-  driveMotor(REAR_RIGHT_DRIVE_MOTOR_ID, wheelTarget.rr_drive_speed);
+  driveWheel(FRONT_RIGHT_DRIVE_MOTOR_ID, wheelTarget.fr_drive_speed);
+  driveWheel(MIDDLE_RIGHT_DRIVE_MOTOR_ID, wheelTarget.mr_drive_speed);
+  driveWheel(REAR_RIGHT_DRIVE_MOTOR_ID, wheelTarget.rr_drive_speed);
 
 }
 
-//TODO: Rename to driveWheel
-void driveMotor(int motorID, int speed) {
+void driveWheel(int motorID, int speed) {
 
   if (speed < 0) {
     speed = speed * -1;
@@ -634,15 +604,15 @@ void driveMotor(int motorID, int speed) {
  * Stops all the motors (Articulation, conveyor, winch, and Wheels) and chages the current state to reflect the stop
  *
  * Parameters:
- *  EStop - Weather or not this is an E-Stop or a normal end of command stop
+ *  EStop - Whether or not this is an E-Stop or a normal end of command stop
  */
 void stopAllMotors(bool EStop) {
 
-  if (EStop == true) {
-    currentStatus = E_STOPPED;
+  if (EStop) {
+    currentStatus = STOPPED;
   } 
   else {
-    currentStatus = STOPPED;
+    currentStatus = E_STOPPED;
   }
 
   //Stop all motors 
@@ -655,7 +625,7 @@ void stopAllMotors(bool EStop) {
 /**
  * Stops the movement motors (Articulation and Wheels) and chages the current state to reflect the stop.
  */
-void stopMovementMotors() {
+void stopArticulationAndDriveMotors() {
   currentStatus = STOPPED;
 
   //Stop all movement (drive and articulation) motors 
@@ -799,7 +769,7 @@ void updateArticulationValues()
 void unitTest(){
   // delay after set up
   for(int j = 0; j < 100; j++){
-    delayMicroseconds(15000);
+    delayMicroseconds(15000); //TODO: check for setup with actual values not time
   }
 
   // loop through and test all drive motors:
@@ -929,7 +899,7 @@ void delaySeconds(double n){
  * 
  */
 void setup(){
-  // To start, no motor is moving.
+  // To start, no motor is moving. //TODO: input correct number of motors
   for(int i = 0; i < 15; ++i)
   {
     motorInMotion[i] = false; 
@@ -950,11 +920,10 @@ void setup(){
   sabertoothDriverNode.advertise(pubwheelStatus);
   sabertoothDriverNode.advertise(pubDebug);
 
-
   // Open communication with Saberteeth
   Serial3.begin(9600);
 
-  stopAllMotors(false);
+  stopAllMotors(true);
   //unitTest();
   //unitTestConveyor();
   //unitTestWinch();
@@ -989,7 +958,7 @@ void loop(){
     //} 
     //else {
     // print("needs to articulate: false");
-    stopMovementMotors();
+    stopArticulationAndDriveMotors();
     currentStatus = START_DRIVING;
     //}
   }
@@ -1007,18 +976,18 @@ void loop(){
 
     print("current status: start_driving");
     //Set stop drive time
-    driveStopTime = millis() + (long)wheelTarget.drive_duration*1000;
+    driveTime = millis() + (long)wheelTarget.drive_duration*1000;
 
     //Send drive start command
-    driveAllMotors();
+    driveAllWheels();
 
     currentStatus = IS_DRIVING;
   }
 
   if (currentStatus == IS_DRIVING) {
-    if (millis() >= driveStopTime) {
+    if (millis() >= driveTime) {
       print("over time limit: stop driving");
-      stopMovementMotors();
+      stopArticulationAndDriveMotors();
     }
   }
 
