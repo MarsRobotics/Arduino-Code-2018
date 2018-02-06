@@ -160,7 +160,6 @@ void setActualArticulationValues(const command2ros::ManualCommand& articulationV
   wheelOffset.rr_articulation_angle = (int)(articulationValues.rr_articulation_angle - wheelStatus.rr_articulation_angle - wheelOffset.rr_articulation_angle);
 
   //pubwheelStatus.publish(&wheelOffset);// current rotation data for each wheel. 
-
 }
 
 
@@ -208,7 +207,6 @@ void setupWheelStatus() {
  *    to articulate "return true"
  */
 bool needsToArticulate() {
-
   int delta;
   int moveRange;
   //Check if the difference between target and actual articulation exceeds our given range
