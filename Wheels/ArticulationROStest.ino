@@ -109,6 +109,8 @@ void setupWheelStatus() {
   wheelStatus.rr_drive_speed = 0;
 }
 
+<<<<<<< HEAD
+=======
 /**
  * Checks the current angle of each of the articulation joints against their target value
  *    if the difference betwen any of them exceed the range given by DELTA_RANGE then we need 
@@ -224,6 +226,7 @@ void articulateAllWheels() {
     last = wheelArticulations[i];
   }
 
+>>>>>>> e8ecce3f0e664f44286fd0a8b7351af26be4de58
 // Print error message to "sabertoothDebugger" topic
 void print(char* errorMsg){
   debugMsg.data = errorMsg;
