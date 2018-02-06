@@ -105,8 +105,7 @@ ros::Publisher pubDebug("sabertooth_debugger", &debugMsg);
 command2ros::ManualCommand wheelTarget;
 
 // Subscribers for intended drive velocity and direction
-void newManualCommandCallback(const command2ros::ManualCommand& newManualCommand)
-{      
+void newManualCommandCallback(const command2ros::ManualCommand& newManualCommand) {      
   //TODO: Do we need to stop the robot at this point, Sherry and Matt H say no
   print("start cb");
 
@@ -642,12 +641,10 @@ void stopArticulationAndDriveMotors() {
  *  speed - the speed at which to spin the motor.
  */
 void driveClockwise(int motorID, int speed){
-  if(0 == speed)
-  {
+  if(0 == speed) {
     motorInMotion[motorID] = false; 
   }
-  else
-  {
+  else {
     motorInMotion[motorID] = true;
   }
 
@@ -657,8 +654,7 @@ void driveClockwise(int motorID, int speed){
   unsigned char address = MOTOR_ADDRESS[motorID];
   unsigned char command = MOTOR_COMMAND[motorID];
   // If the motor is connected backwards, we need to flip the command from 0/4 to 1/5:
-  if(MOTOR_FLIPPED[motorID])
-  {
+  if(MOTOR_FLIPPED[motorID]) {
     command += 1;
   }
   unsigned char checksum = (address + command + ((char)speed)) & 0b01111111;
@@ -680,20 +676,17 @@ void driveClockwise(int motorID, int speed){
  *  speed - the speed at which to spin the motor.
  */
 void driveCounterclockwise(char motorID, char speed){ 
-  if(0 == speed)
-  {
+  if(0 == speed) {
     motorInMotion[motorID] = false; 
   }
-  else
-  {
+  else {
     motorInMotion[motorID] = true;
   }
   // Packet format: Address Byte, Command Byte, Value Byte, Checksum.
   unsigned char address = MOTOR_ADDRESS[motorID];
   unsigned char command = MOTOR_COMMAND[motorID] + 1;
   // If the motor is connected backwards, we need to flip the command from 1/5 to 0/4:
-  if(MOTOR_FLIPPED[motorID])
-  {
+  if(MOTOR_FLIPPED[motorID]) {
     command -= 1;
   }
   unsigned char checksum = (address + command + speed) & 0b01111111;
@@ -708,8 +701,7 @@ void driveCounterclockwise(char motorID, char speed){
 /**
  * Gets the last known position of each articulation joint, and updates acordingly.
  */
-void updateArticulationValues()
-{
+void updateArticulationValues()  {
 
   /*
   // Code for command line testing purposes
@@ -722,43 +714,37 @@ void updateArticulationValues()
    */
 
   int encoderPostition = EncoderFL::getPosition() + (int)(wheelOffset.fl_articulation_angle / 360 * 400);
-  while (encoderPostition < 0)
-  {
+  while (encoderPostition < 0) {
     encoderPostition += ENCODER_POSITIONS;
   }
   wheelStatus.fl_articulation_angle = (int)((encoderPostition * 9L) / 10L);
 
   encoderPostition = EncoderML::getPosition() + (int)(wheelOffset.ml_articulation_angle / 360 * 400);
-  while (encoderPostition < 0)
-  {
+  while (encoderPostition < 0) {
     encoderPostition += ENCODER_POSITIONS;
   }
   wheelStatus.ml_articulation_angle = (int)((encoderPostition * 9L) / 10L);
 
   encoderPostition = EncoderRL::getPosition() + (int)(wheelOffset.rl_articulation_angle / 360 * 400);
-  while (encoderPostition < 0)
-  {
+  while (encoderPostition < 0) {
     encoderPostition += ENCODER_POSITIONS;
   }
   wheelStatus.rl_articulation_angle = (int)((encoderPostition * 9L) / 10L);
 
   encoderPostition = EncoderFR::getPosition() + (int)(wheelOffset.fr_articulation_angle / 360 * 400) - 200; // Subtract 200 b/c the right side is flipped.
-  while (encoderPostition < 0)
-  {
+  while (encoderPostition < 0) {
     encoderPostition += ENCODER_POSITIONS;
   }
   wheelStatus.fr_articulation_angle = (int)((encoderPostition * 9L) / 10L);
 
   encoderPostition = EncoderMR::getPosition() + (int)(wheelOffset.mr_articulation_angle / 360 * 400) - 200;
-  while (encoderPostition < 0)
-  {
+  while (encoderPostition < 0) {
     encoderPostition += ENCODER_POSITIONS;
   }
   wheelStatus.mr_articulation_angle = (int)((encoderPostition * 9L) / 10L);
 
   encoderPostition = EncoderRR::getPosition() + (int)(wheelOffset.rr_articulation_angle / 360 * 400) - 200;
-  while (encoderPostition < 0)
-  {
+  while (encoderPostition < 0) {
     encoderPostition += ENCODER_POSITIONS;
   }
   wheelStatus.rr_articulation_angle = (int)((encoderPostition * 9L) / 10L);
@@ -852,8 +838,7 @@ void unitTest2(){
   }
 }
 
-void proofOfLife()
-{
+void proofOfLife() {
   // Proof of life newspaper (5s)
   delaySeconds((double)5);
   // Spin conveyor backwards (10s)
@@ -898,8 +883,7 @@ void delaySeconds(double n){
  */
 void setup(){
   // To start, no motor is moving. //TODO: input correct number of motors
-  for(int i = 0; i < 15; ++i)
-  {
+  for(int i = 0; i < 15; ++i) {
     motorInMotion[i] = false; 
   }
 

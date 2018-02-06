@@ -109,6 +109,124 @@ void setupWheelStatus() {
   wheelStatus.rr_drive_speed = 0;
 }
 
+<<<<<<< HEAD
+=======
+/**
+ * Checks the current angle of each of the articulation joints against their target value
+ *    if the difference betwen any of them exceed the range given by DELTA_RANGE then we need 
+ *    to articulate "return true"
+ */
+bool needsToArticulate() {
+  int delta;
+  int moveRange;
+  //Check if the difference between target and actual articulation exceeds our given range
+  delta = wheelStatus.fl_articulation_angle - wheelTarget.fl_articulation_angle;  //FL
+  moveRange = (motorInMotion[FRONT_LEFT_ARTICULATION_MOTOR_ID]) ? DELTA_STOP_RANGE : DELTA_START_RANGE; 
+  if (delta < -moveRange || delta > moveRange) { 
+    return true; 
+  }
+
+  delta = wheelStatus.ml_articulation_angle - wheelTarget.ml_articulation_angle;  //ML
+  moveRange = (motorInMotion[MIDDLE_LEFT_ARTICULATION_MOTOR_ID]) ? DELTA_STOP_RANGE : DELTA_START_RANGE; 
+  if (delta < -moveRange || delta > moveRange) { 
+    return true; 
+  }
+
+  delta = wheelStatus.rl_articulation_angle - wheelTarget.rl_articulation_angle;  //RL
+  moveRange = (motorInMotion[REAR_LEFT_ARTICULATION_MOTOR_ID]) ? DELTA_STOP_RANGE : DELTA_START_RANGE; 
+  if (delta < -moveRange || delta > moveRange) { 
+    return true; 
+  }
+
+  delta = wheelStatus.fr_articulation_angle - wheelTarget.fr_articulation_angle;  //FR
+  moveRange = (motorInMotion[FRONT_RIGHT_ARTICULATION_MOTOR_ID]) ? DELTA_STOP_RANGE : DELTA_START_RANGE; 
+  if (delta < -moveRange || delta > moveRange) { 
+    return true; 
+  }
+
+  delta = wheelStatus.mr_articulation_angle - wheelTarget.mr_articulation_angle;  //MR
+  moveRange = (motorInMotion[MIDDLE_RIGHT_ARTICULATION_MOTOR_ID]) ? DELTA_STOP_RANGE : DELTA_START_RANGE; 
+  if (delta < -moveRange || delta > moveRange) { 
+    return true; 
+  }
+
+  delta = wheelStatus.rr_articulation_angle - wheelTarget.rr_articulation_angle;  //RR
+  moveRange = (motorInMotion[REAR_RIGHT_ARTICULATION_MOTOR_ID]) ? DELTA_STOP_RANGE : DELTA_START_RANGE; 
+  if (delta < -moveRange || delta > moveRange) { 
+    return true; 
+  }
+
+  return false;
+}
+
+void articulateAllWheels() {
+  int wheelIds[6] = {
+    FRONT_LEFT_ARTICULATION_MOTOR_ID,
+    FRONT_RIGHT_ARTICULATION_MOTOR_ID, 
+    MIDDLE_LEFT_ARTICULATION_MOTOR_ID, 
+    MIDDLE_RIGHT_ARTICULATION_MOTOR_ID, 
+    REAR_LEFT_ARTICULATION_MOTOR_ID,
+    REAR_RIGHT_ARTICULATION_MOTOR_ID };
+  int wheelArticulations[6];
+
+  // Note: wheelTarget says it is the angle, but since we 
+  // hacked at the last minute, it is actually time.
+  wheelArticulations[0] = wheelTarget.fl_articulation_time;   //TODO change all _angle => _time
+  wheelArticulations[1] = wheelTarget.fr_articulation_time;
+  wheelArticulations[2] = wheelTarget.ml_articulation_time;
+  wheelArticulations[3] = wheelTarget.mr_articulation_time;
+  wheelArticulations[4] = wheelTarget.rl_articulation_time;
+  wheelArticulations[5] = wheelTarget.rr_articulation_time;
+
+  // Insertion sort
+  for (int j = 0; j < 6; j++){
+    int key = wheelArticulations[j];
+    int key2 = wheelIds[j];
+    int i = j - 1; 
+    while (i >= 0 && abs(wheelArticulations[i]) > abs(key)){
+      wheelArticulations[i + 1] = wheelArticulations[i];
+      wheelIds[i + 1] = wheelIds[i];
+      i = i - 1;
+    }
+
+    wheelArticulations[i + 1] = key;
+    wheelIds[i + 1] = key2;
+  }
+
+  // Iterate through all of the wheels, and 
+  // start them if their times are greater than 0.
+  for(int i = 0; i < 6; i++ ) {
+    if(wheelArticulations[i] != 0) {
+      // Drive clockwise when positive time is given
+      if(wheelArticulations[i] > 0) {
+        // Articulate
+        driveClockwise(wheelIds[i], ARTICULATION_SPEED);
+        // drive the wheel
+        driveClockwise(wheelIds[i] - 6, ARTICULATION_SPEED*ARTICULATION_DRIVE_SPEED);
+      }
+      else {
+        // Articulate
+        driveCounterclockwise(wheelIds[i], ARTICULATION_SPEED);
+        // Drive the wheel
+        driveCounterclockwise(wheelIds[i] - 6, ARTICULATION_SPEED*ARTICULATION_DRIVE_SPEED);
+      }
+    }
+  }
+
+  // Delay the difference for each pair
+  int last = wheelArticulations[0];
+  delaySeconds((double)wheelArticulations[0]);
+  for(int i = 1; i < 6; i++ ) {
+    int diff = abs(wheelArticulations[i]) - abs(last);
+    delaySeconds((double)diff);
+
+    // Stop that motor
+    driveCounterclockwise(wheelArticulations[last],0);  
+    driveCounterclockwise(wheelArticulations[last] - 6, 0);
+    last = wheelArticulations[i];
+  }
+
+>>>>>>> e8ecce3f0e664f44286fd0a8b7351af26be4de58
 // Print error message to "sabertoothDebugger" topic
 void print(char* errorMsg){
   debugMsg.data = errorMsg;
