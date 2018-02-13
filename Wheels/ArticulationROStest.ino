@@ -5,6 +5,8 @@
 #include <command2ros/ManualCommand.h>
 #include "SabertoothDriverROS.h"
 
+NUM_MOTORS = 6
+
 //node handle to represent this arduino
 ros::NodeHandle sabertoothDriverNode;
 
@@ -109,8 +111,6 @@ void setupWheelStatus() {
   wheelStatus.rr_drive_speed = 0;
 }
 
-<<<<<<< HEAD
-=======
 /**
  * Checks the current angle of each of the articulation joints against their target value
  *    if the difference betwen any of them exceed the range given by DELTA_RANGE then we need 
@@ -226,9 +226,312 @@ void articulateAllWheels() {
     last = wheelArticulations[i];
   }
 
->>>>>>> e8ecce3f0e664f44286fd0a8b7351af26be4de58
 // Print error message to "sabertoothDebugger" topic
 void print(char* errorMsg){
   debugMsg.data = errorMsg;
   pubDebug.publish(&debugMsg);
+}
+
+int getArticulationDirection(int motorID, int from, int to) {
+  int delta = from-to;
+
+  int moveRange = (motorInMotion[motorID]) ? DELTA_STOP_RANGE : DELTA_START_RANGE; 
+  if (delta >= -moveRange && delta <= moveRange) {
+    return ARTICULATION_DIRECTION_NONE;
+  }
+
+  // Calculations are made by "normalizing" the data so that we are always starting from "0" 
+  // and heading towards the target
+
+  // If the current articulation angle is between 0 and 180, then we want to shift the 
+  // whole frame of reference clockwise
+
+  //Shift "to" and "from" so that "to" is the angle that we need to turn and "from" is 0
+  if(from >= 0 && from <= 180){
+
+    // shift "to" by however much "from" shifted (counter clockwise)
+    to -= from;
+    if(to < 0){
+      to += 360;
+    }
+
+    // shift "from" to 0 degrees
+    from = 0;
+  }
+  else{
+    delta = 360 - from;
+
+    // shift "from" to 0 degrees
+    from = 0;
+
+    // shift "to" by however much "from" shifted (clockwise)
+    to += delta;
+    if(to > 360){
+      to -= 360;
+    }
+  }
+
+  //Now we compare the two distances and move in the diection that is fastest
+  int counterClockwiseDistance = to;
+  int clockwiseDistance = 360 - to;
+
+  if(counterClockwiseDistance > clockwiseDistance){
+    return ARTICULATION_DIRECTION_CLOCKWISE;
+  }
+  else{
+    return ARTICULATION_DIRECTION_COUNTER_CLOCKWISE;
+  }
+}
+
+/**
+ *
+ */
+void articulateWheel(int motorID, int direction) {
+
+  int articulationSpeed = 30*ARTICULATION_DRIVE_SPEED;
+  int wheelSpeed = 30;
+
+  //TODO: Make a constant
+  int articulationID = motorID + 6;
+
+  if (direction == ARTICULATION_DIRECTION_CLOCKWISE) {
+    driveClockwise(articulationID, articulationSpeed);
+    driveClockwise(motorID, wheelSpeed);
+  } 
+  else if (direction == ARTICULATION_DIRECTION_COUNTER_CLOCKWISE) {
+    driveCounterclockwise(articulationID, articulationSpeed);
+    driveCounterclockwise(motorID, wheelSpeed);
+  }
+  else if(direction == ARTICULATION_DIRECTION_NONE){
+    driveCounterclockwise(articulationID, 0);
+    driveCounterclockwise(motorID, 0);
+  }
+}
+
+void driveAllWheels() {
+  //Set wheel speeds
+  driveWheel(FRONT_LEFT_DRIVE_MOTOR_ID, wheelTarget.fl_drive_speed*-1);
+  driveWheel(MIDDLE_LEFT_DRIVE_MOTOR_ID, wheelTarget.ml_drive_speed*-1);
+  driveWheel(REAR_LEFT_DRIVE_MOTOR_ID, wheelTarget.rl_drive_speed*-1);
+
+  driveWheel(FRONT_RIGHT_DRIVE_MOTOR_ID, wheelTarget.fr_drive_speed);
+  driveWheel(MIDDLE_RIGHT_DRIVE_MOTOR_ID, wheelTarget.mr_drive_speed);
+  driveWheel(REAR_RIGHT_DRIVE_MOTOR_ID, wheelTarget.rr_drive_speed);
+}
+
+void driveWheel(int motorID, int speed) {
+  if (speed < 0) {
+    speed = speed * -1;
+    driveClockwise(motorID, speed);
+  } 
+  else {
+    speed = speed;
+    driveCounterclockwise(motorID, speed);
+  }
+}
+
+/**
+ * Stops all the motors (Articulation, conveyor, winch, and Wheels) and chages the current state to reflect the stop
+ *
+ * Parameters:
+ *  EStop - Whether or not this is an E-Stop or a normal end of command stop
+ */
+void stopAllMotors(bool EStop) {
+
+  if (EStop) {
+    currentStatus = STOPPED;
+  } 
+  else {
+    currentStatus = E_STOPPED;
+  }
+
+  //Stop all motors 
+  const int speed = 0;
+  for(int motorID = 0; motorID < NUM_MOTORS; ++motorID) {
+    driveClockwise(motorID, speed);
+  }
+}
+
+/**
+ * Stops the movement motors (Articulation and Wheels) and chages the current state to reflect the stop.
+ */
+void stopArticulationAndDriveMotors() {
+  currentStatus = STOPPED;
+
+  //Stop all movement (drive and articulation) motors 
+  const int speed = 0;
+  for(int motorID = 0; motorID <= 11; ++motorID) {
+    driveClockwise(motorID, speed);
+  }
+}
+
+/**
+ * Drives a given motor at a given speed in a clockwise direction
+ *
+ * Paramteters:
+ *  motorID - the id of the motor to spin (0-11)
+ *  speed - the speed at which to spin the motor.
+ */
+void driveClockwise(int motorID, int speed){
+  if(0 == speed) {
+    motorInMotion[motorID] = false; 
+  }
+  else {
+    motorInMotion[motorID] = true;
+  }
+
+  // Packet format: Address Byte, Command Byte, Value Byte, Checksum.
+  // Build the data packet:
+  // Get the address and motor command ID from a predefined array.
+  unsigned char address = MOTOR_ADDRESS[motorID];
+  unsigned char command = MOTOR_COMMAND[motorID];
+  // If the motor is connected backwards, we need to flip the command from 0/4 to 1/5:
+  if(MOTOR_FLIPPED[motorID]) {
+    command += 1;
+  }
+  unsigned char checksum = (address + command + ((char)speed)) & 0b01111111;
+
+  // Write the packet.
+  Serial1.write(address);
+  Serial1.write(command);
+  Serial1.write(((char)speed));
+  Serial1.write(checksum);
+  //TODO: Move the delay time to a constant
+  delayMicroseconds(1000); 
+}
+
+/**
+ * Drives a given motor at a given speed in a counterclockwise direction
+ *
+ * Paramteters:
+ *  motorID - the id of the motor to spin (0-11)
+ *  speed - the speed at which to spin the motor.
+ */
+void driveCounterclockwise(char motorID, char speed){ 
+  if(0 == speed) {
+    motorInMotion[motorID] = false; 
+  }
+  else {
+    motorInMotion[motorID] = true;
+  }
+  // Packet format: Address Byte, Command Byte, Value Byte, Checksum.
+  unsigned char address = MOTOR_ADDRESS[motorID];
+  unsigned char command = MOTOR_COMMAND[motorID] + 1;
+  // If the motor is connected backwards, we need to flip the command from 1/5 to 0/4:
+  if(MOTOR_FLIPPED[motorID]) {
+    command -= 1;
+  }
+  unsigned char checksum = (address + command + speed) & 0b01111111;
+  Serial1.write(address);
+  Serial1.write(command);
+  Serial1.write(speed);
+  Serial1.write(checksum);
+  //TODO: Move the delay time to a constant
+  delayMicroseconds(1000);
+}
+
+void delaySeconds(double n){
+  unsigned int delayTime = 10000;
+  long desiredMicroDelay = (long)(n * 1000000L);
+  long numCycles = desiredMicroDelay / (long)delayTime;
+  for(long j = 0L; j < numCycles; j++){
+    delayMicroseconds(delayTime);
+  }
+}
+
+/**
+ * Is called on starting the arduino.
+ * 
+ */
+void setup(){
+  // To start, no motor is moving. //TODO: input correct number of motors
+  for(int i = 0; i < NUM_MOTORS; ++i) {
+    motorInMotion[i] = false; 
+  }
+
+  // Setup the encoders
+
+  //Initialize the ROS Node
+  sabertoothDriverNode.initNode();
+  sabertoothDriverNode.subscribe(commandSubscriber);
+  sabertoothDriverNode.subscribe(setActualArticulationSubscriber);
+  sabertoothDriverNode.advertise(pubwheelStatus);
+  sabertoothDriverNode.advertise(pubDebug);
+
+  // Open communication with Saberteeth
+  Serial1.begin(9600);
+
+  stopAllMotors(true);
+
+  // Initialize the current wheel status message
+  setupWheelStatus();
+}
+
+// This program does whatever ROS directs it to do.
+// So far, it drives the robot forwards and backwards.
+void loop(){
+  updateArticulationValues(); 
+
+  //We are E-Stopped, don't respond to future commands.
+  if (currentStatus == E_STOPPED) {
+    //TODO: This will never happen right now, may want for competition though
+    return;
+  } 
+
+  
+  //Currently stopped, don't do anything.
+  // ASSUMES the robot is stopped when currentStatus is set to STOPPED.
+  if (currentStatus == STOPPED) {
+    // do nothing
+  }
+
+  if (currentStatus == ARTICULATING) {
+    print("needs to articulate: true");
+    //if (needsToArticulate() == true) {
+    articulateAllWheels();
+    //} 
+    //else {
+    // print("needs to articulate: false");
+    stopArticulationAndDriveMotors();
+    currentStatus = START_DRIVING;
+    //}
+  }
+
+  if (currentStatus == START_DRIVING) {
+    //TODO: Check with MEs about possibility of losing correct articulation (by going over an obstacle or something)
+
+    //Check if we need to articulate
+    // if (needsToArticulate()) {
+    //   //Set state to articulate and don't drive
+    //   currentStatus = ARTICULATING;
+    //   // TODO: Does this need a rosnode.spin() ?
+    //   return;
+    // }
+
+    print("current status: start_driving");
+    //Set stop drive time
+    driveTime = millis() + (long)wheelTarget.drive_duration*1000;
+
+    //Send drive start command
+    driveAllWheels();
+
+    currentStatus = IS_DRIVING;
+  }
+
+  if (currentStatus == IS_DRIVING) {
+    if (millis() >= driveTime) {
+      print("over time limit: stop driving");
+      stopArticulationAndDriveMotors();
+    }
+  }
+
+  pubwheelStatus.publish(&wheelStatus);// current rotation data for each wheel. 
+
+  //Sync with ROS
+  sabertoothDriverNode.spinOnce(); // Check for subscriber update/update timestamp
+
+  //Delay so we don't overload any serial buffers
+  for(int i = 0; i < 7; i++){
+    delayMicroseconds(15000);
+  }
 }
