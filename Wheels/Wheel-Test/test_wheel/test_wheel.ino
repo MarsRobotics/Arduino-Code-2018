@@ -84,8 +84,102 @@
 //  delayMicroseconds(1000); 
 //}
 
-//int wheels[][][] = new int[2][6][4];
+//==============================================================================================================
+//==============================================================================================================
+//==============================================================================================================
 
+
+
+//===Program Varables===
+int currentTime = 0;
+int runTime = 50;
+int baseSpeed = 60;
+
+//===Wheel Varables==
+int numberOfWheels = 15;
+unsigned char wheelID[15] =  {129, 130, 131, 132, 133, 134,         //Drive motors
+                              135, 136, 137, 138, 139, 140,         //articulation motors
+                              141, 142, 143};                       //Misc motors
+boolean wheelDirection[15] = {true, true, true, true, true, true,   //Drive motors
+                              true, true, true, true, true, true,   //articulation motors
+                              true, true, true};                    //Misc motors
+int wheelArticulation[15] =  {0, 0, 0, 0, 0, 0,                     //Drive motors
+                              0, 0, 0, 0, 0, 0,                     //articulation motors
+                              0, 0, 0};                             //Misc motors
+                              
+//Serial1 on pins 19 (RX) and 18 (TX), Serial2 on pins 17 (RX) and 16 (TX), Serial3 on pins 15 (RX) and 14 (TX)
+int wheelSerial[15] =        {1, 1, 1, 1, 1, 1,
+                              1, 1, 1, 1, 1, 1,
+                              1, 1, 1};
+String wheelName[15] =       {"fr", "mr", "rr", "fl", "ml", "mr",   //Drive motors
+                              "fr", "mr", "rr", "fl", "ml", "mr",   //articulation motors
+                              "dumper", "digger", "lidarCon"};      //Misc motors
+
+
+/**
+ * runs a motor given motorID, direction, and speed
+ * 
+ * ID: the wheelID[] position
+ * commandInt:  the direction we want to rotate the wheel
+ *              0: full foward, 1: full reverse
+ * speed2: the speed you want it to rotate
+ */
+void runMotor(int ID, int commandInt, int speed2){
+  unsigned char address = wheelID[ID];
+  unsigned char command;
+  //reverse the wheels direction if need be
+  if(wheelDirection[ID] == true){
+    //wheel is facing correct direction
+    command = (char)commandInt;
+  }
+  else{
+    //wheel is reversed, reverse the command
+    command = (char)(1-commandInt);
+  }
+  
+  unsigned char checksum = (address + command + ((char)speed2)) & 0b01111111;
+  // Write to the correct serial packet.
+  if(wheelSerial[ID] == 1){
+    Serial1.write(address);
+    Serial1.write(command);
+    Serial1.write(((char)speed2));
+    Serial1.write(checksum);
+  }
+  else if(wheelSerial[ID] == 2){
+    Serial2.write(address);
+    Serial2.write(command);
+    Serial2.write(((char)speed2));
+    Serial2.write(checksum);
+  }
+  else if(wheelSerial[ID] == 3){
+    Serial3.write(address);
+    Serial3.write(command);
+    Serial3.write(((char)speed2));
+    Serial3.write(checksum);
+  }
+}
+
+//Stop all Motors
+void fullStop(){
+  for(int i = 0; i < numberOfWheels; i++){
+    runMotor(i, 0, 0);
+  }
+}
+
+
+//run all Drive Motors
+void runAllDrive(int command, int speed2){
+  for(int i = 0; i < 6; i++){
+    runMotor(i, command, speed2);
+  }
+}
+
+//run all Articulation Motors
+void runAllArticulation(int command, int speed2){
+  for(int i = 6; i < 12; i++){
+    runMotor(i, command, speed2);
+  }
+}
 
 void setup() {
   // put your setup code here, to run once:
@@ -93,23 +187,25 @@ void setup() {
 }
 
 void loop() {
-  unsigned char address = 129;  //TODO what was the address???
-  unsigned char command = 0;
-  int speed2 = 30;
-  unsigned char checksum = (address + command + ((char)speed2)) & 0b01111111;
-  // Write the packet.
-  Serial1.write(address);
-  Serial1.write(command);
-  Serial1.write(((char)speed2));
-  Serial1.write(checksum);
+  //If we are over our time, stop motor
+  if(currentTime > runTime){
+    fullStop();
+  }
+  else{
+    //runMotor(0, 0, baseSpeed);
+    runAllDrive(0, baseSpeed);
+    currentTime++;
+    //print("hi");
+  }
 
-  //pubwheelStatus.publish(&wheelStatus);// current rotation data for each wheel. 
-  //Sync with ROS
-//  sabertoothDriverNode.spinOnce(); // Check for subscriber update/update timestamp
+
+  
   //Delay so we don't overload any serial buffers
   for(int i = 0; i < 7; i++){
     delayMicroseconds(15000);
   }
+
+  
 }
 
 
