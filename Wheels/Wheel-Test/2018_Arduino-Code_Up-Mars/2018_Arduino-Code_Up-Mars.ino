@@ -16,13 +16,13 @@
 //
 //// This node handle represents this arduino. 
 ////ros::NodeHandle sabertoothDriverNode; //TODO maybie?
-//================================================================================================================
-//================================================================================================================
-//================================================================================================================
+//============================================================================================================================
+//============================================================================================================================
+//============================================================================================================================
 
-//================================================================================================================
+//============================================================================================================================
 // ROS Variables
-//================================================================================================================
+//============================================================================================================================
 
 //#include <ros.h>
 //#include <std_msgs/Int32.h>
@@ -43,9 +43,9 @@
 //
 //ros::Subscriber sub("rand_no", &messageCb);
 
-//================================================================================================================
+//============================================================================================================================
 // Program Variables
-//================================================================================================================
+//============================================================================================================================
 //int currentTime = 0;
 //int runTime = 30;
 
@@ -55,7 +55,7 @@ int driveSpeed = 60;    //Speed of driveMotors going forward
 int turnSpeed = 20;     //Speed of articulationMotors turning
 int turnDiveSpeed = 30; //Speed of driveMotors turning rover left/right
 
-double driveError;// = driveSpeed/2;  //The allowed room for error in drive forward X distance (if this is too small it drives infinitely!!!)
+//double driveError;// = driveSpeed/2;  //The allowed room for error in drive forward X distance (if this is too small it drives infinitely!!!)
 double turnError;// = turnSpeed/2;    //The allowed room for error when turning the articulation motors to X angle
 double artHelperSpeed = 0.5;          //Speed modifier. Used so the drive wheels turn during wheel articulation smoothly (so the wheels don't drag when steering)
 double innerTurnSpeed = 0.8;          //Speed modifier. Used so the inner 2 drive wheels turn slower when the rover is turning in place
@@ -71,11 +71,25 @@ int stateStorage[6] =   { 20,  20,  20,  20,  20,  20};  //orientation of wheels
 
 int newDegrees[6] = {0,0,0,0,0,0};  //storage value used to pass an array of Ints between methods //(Should be a better way of doing this, but IDK)
 
-boolean pause = false; //If we are Pauseed we don't run motors and simpleDelay() freezes on activation
+boolean pause = false; //If we are Pauseed we don't run motors pauses program
 
-//================================================================================================================
+
+//============================================================================================================================
+// Digger and Dumper Varables
+//============================================================================================================================
+
+//The amount of time the digger and dumper, spend diging and dumping
+int diggerTime   = 1000; 
+int wenchDistance= 1000;
+int dumperTime  = 1000;
+
+int diggerSpeed = 30;
+int wenchSpeed  = 30;
+int dumperSpeed = 30;
+
+//============================================================================================================================
 // Wheel-Variables, Varables for each individual wheel
-//================================================================================================================
+//============================================================================================================================
 int numberOfWheels = 15;
 unsigned char wheelID[15] =  {100, 129, 100, 100, 100, 100,         //Drive motors
                               130, 100, 100, 100, 100, 100,         //articulation motors
@@ -96,7 +110,7 @@ const int wheelSerial[15] =  {1, 1, 1, 1, 1, 1,
                               1, 1, 1};
 //String wheelName[15] =       {"fr", "mr", "rr", "fl", "ml", "rl",   //Drive motors  //"fr" means Fount-Right, ext
 //                              "fr", "mr", "rr", "fl", "ml", "rl",   //articulation motors //"rl" means Rear-Left
-//                              "dumper", "digger", "lidarCon"};      //Misc motors
+//                              "dumper12", "wench13", "digger14"};   //Misc motors
 
 const int wheelTrueZero[15] ={0, 0, 0, 0, 0, 0,                  //Drive motors
                               0, 0, 0, 0, 0, 0,                  //articulation motors
@@ -109,6 +123,8 @@ const int wheelTrueZero[15] ={0, 0, 0, 0, 0, 0,                  //Drive motors
 
 int rpiDriveDistance= 0;
 int rpiTurnDegrees  = 0;
+boolean rpiDigger = false;
+boolean rpiDumper = false;
 boolean rpiPackIn = false;
 boolean rpiPause =  false;
 boolean rpiEStop =  false;
@@ -141,6 +157,8 @@ void loop() {
     //This should be our real looping method call, (temp. disabled for testing)
     commandDriveFoward(rpiDriveDistance);
     commandTurnRover(rpiTurnDegrees);
+    commandDigger(rpiDigger);
+    commandDumper(rpiDumper);
     commandPackIn(rpiPackIn);
     commandSetPause(rpiPause);
     commandEStop(rpiEStop);
@@ -173,9 +191,9 @@ void loop() {
   simpleDelay();
 }
 
-//================================================================================================================
+//============================================================================================================================
 // Command Methods, these are the only ones the R-pi is expected to call
-//================================================================================================================
+//============================================================================================================================
 /**
  * Sets the Rover's wheels to point straight and drives foward
  * 
@@ -213,9 +231,35 @@ void commandTurnRover(int degrees){
 }
 
 /**
+ * Cause the rover to lower wench and runs the digger for "diggerTime"
+ * 
+ * @param startDigger: true if we want to dig now
+ */
+void commandDigger(boolean startDigger){
+  //If digger in is false we didn't actualy want to call this method
+  if(startDigger == false || pause){ return;}
+  //move wench down, run digger, move wench back up
+  driveOneForward(13, wenchDistance, wenchSpeed); //move wench
+  driveOneForward(12, diggerTime, diggerSpeed);   //run dumper
+  driveOneForward(13, -wenchDistance, wenchSpeed);//move wench back
+}
+
+/**
+ * Cause the rover run the dumper for "dumperTime"
+ * 
+ * @param startDumper: true if we want to dump right now
+ */
+void commandDumper(boolean startDumper){
+  //If dumper in is false we didn't actualy want to call this method
+  if(startDumper == false || pause){ return;}
+  //run the dumper for dumperTime
+  driveOneForward(14, dumperTime, dumperSpeed); //run dumper
+}
+
+/**
  * Sets the Rover's wheels to the resting/storage position
  * 
- * @param packIn: true, if we actualy want to pack in
+ * @param packIn: true, if we actualy want to pack our wheels in
  *                false, if we don't actualy want to pack wheels in
  */
 void commandPackIn(boolean packIn){ 
@@ -266,9 +310,9 @@ void commandEStop(boolean tempEStop){
   }
 }
 
-//================================================================================================================
+//============================================================================================================================
 // Drive Methods, used to allow Drive Commands drive Rover correct distances
-//================================================================================================================
+//============================================================================================================================
 
 /**
  * Drive forward X distance, (does not reposition wheels)
@@ -287,7 +331,7 @@ void driveForward(int distance){
   activeDriveForward(direction, driveSpeed);
 
   //if we are not within the driveError of the distance, we keep driving
-  while((abs(distance) - distanceTraveled) > driveError){
+  while((abs(distance) - distanceTraveled) > 0/*driveError*/){
     //delay so we don't run the while loop into an overflow
     simpleDelay();
     //if we need to pause, pause
@@ -326,9 +370,9 @@ void stopAllDrive(){
   activeDriveForward(0, 0);
 }
 
-//================================================================================================================
+//============================================================================================================================
 // Turn Methods, used to allow Rover to turn itself the correct distance
-//================================================================================================================
+//============================================================================================================================
 
 /**
  * Turn Rover Right X degrees
@@ -347,7 +391,7 @@ void turnRover(int degrees){
   activeTurn(direction, turnDiveSpeed);
   
   //if we are not within the driveError of the distance, we keep driving
-  while((abs(degrees) - distanceTraveled) > driveError){
+  while((abs(degrees) - distanceTraveled) > 0/*driveError*/){
     //delay so we don't run the while loop into an overflow
     simpleDelay();
     //if we need to pause, pause
@@ -379,9 +423,40 @@ void activeTurn(int direction, int speed){
   runMotor(5, direction, speed);
 }
 
-//================================================================================================================
+//============================================================================================================================
+// Digger/Dumper Methods, used to allow Rover to Dig and Dump correct measurments
+//============================================================================================================================
+
+/**
+ * drives one wheel forward to a given distance (Safe to run)
+ * #Support Method for commandDigger and commandDumper
+ * 
+ * @param ID:       the id of the drive wheel we want to move
+ * @param distance: the distance we want it to travel
+ */
+void driveOneForward(int ID, int distance, int speed){
+  float distanceTraveled = 0;
+  int direction = FOWARD;
+  //if distance is negative => go backwards
+  if(distance < 0){
+    direction = BACKWARD;
+  }
+  runMotor(ID, direction, speed);
+  
+  //if we are not within the driveError of the distance, we keep driving
+  while((abs(distance) - distanceTraveled) > 0 /*driveError*/){
+    //delay so we don't run the while loop into an overflow
+    simpleDelay();
+    //if we need to pause, pause
+    checkForPause();
+    distanceTraveled = distanceTraveled + speed/10.0; //Temp place-holder
+  }
+  stopMotor(ID); //set all drive motor's speed to zero
+}
+
+//============================================================================================================================
 // Articulation Methods, used to allow Rover's articuation wheels to point in specific directions
-//================================================================================================================
+//============================================================================================================================
 
 /**
  * Sets all 6 articulation wheels to point in the direction of a given array of [6] ints
@@ -492,9 +567,9 @@ void adjustForWheelOffset(int degrees[6]){
   }
 }
 
-//================================================================================================================
-// Misc Methods, used to allow All Command Methods and Other Methods in use
-//================================================================================================================
+//============================================================================================================================
+// Misc Methods, used to allow Other Methods in use, [runMotor, keepGoing, stopMotor(s), simpleDelay, checkForPause, ext.]
+//============================================================================================================================
 
 /**
  * runs a motor given motorID, direction, and speed
@@ -549,6 +624,28 @@ void runMotor(int ID, int commandInt, int speed){
 }
 
 /**
+ * Causes no change in motor control until distance = time*speed/timeMod //(Not currently in use but should be)================================================
+ * 
+ * @param distance: The distance we want to keep moving to
+ * @param speed:    The speed at wich we are moving
+ * @param timeMod:  The rate at which speed relates to distance
+ */
+void keepGoing(int distance, int speed, double timeMod){
+  float distanceTraveled = 0.0;
+  
+  //if we are not within the driveError of the distance, we keep going
+  while((abs(distance) - distanceTraveled) > 0/*driveError*/){
+    //delay so we don't run the while loop into an overflow
+    simpleDelay();
+    //if we need to pause, pause
+    checkForPause();
+
+    //Keeps track of how far we have traveled, based off time
+    distanceTraveled += driveSpeed/timeMod;
+  }
+}
+
+/**
  * Sets the driveSpeed and adjusts the values of driveError
  * #Called once in "setup"
  * 
@@ -558,7 +655,7 @@ void setDriveSpeed(int newSpeed){
   //127 is Max Speed => our motors will not run above this
   //15  is Min Speed => any less and motors will not move
   driveSpeed = newSpeed;      //Speed of driveMotors going forward 
-  driveError = driveSpeed/2;  //The allowed room for error in drive forward X distance
+  //driveError = driveSpeed/2;  //The allowed room for error in drive forward X distance
 }
 
 /**
@@ -626,14 +723,14 @@ void checkForPause(){
  * #Support Method for checkForPause
  */
 void updatePause(){
-  //nh.spinOnce(); //ROS updates comunication //=====================================================================================================
+  //nh.spinOnce(); //ROS updates comunication //-----------------------------------------------------------------------------------------------
   commandSetPause(rpiPause);
   commandEStop(rpiEStop);
 }
 
-//================================================================================================================
+//============================================================================================================================
 //Testing Methods (not used in final code)
-//================================================================================================================
+//============================================================================================================================
 
 /**
  * Runs all Articulation Motors (For Testing purposes ONLY)
@@ -663,31 +760,6 @@ void setOneArticulation(int ID, int degrees){
 }
 
 /**
- * drives one wheel forward to a given distance (Safe to run)
- * 
- * @param ID:       the id of the drive wheel we want to move
- * @param distance: the distance we want it to travel
- */
-void driveOneForward(int ID, int distance){
-  float distanceTraveled = 0;
-  int direction = FOWARD;
-  //if distance is negative => go backwards
-  if(distance < 0){
-    direction = BACKWARD;
-  }
-  runMotor(ID, direction, driveSpeed);
-  
-  //if we are not within the driveError of the distance, we keep driving
-  while((abs(distance) - distanceTraveled) > driveError){
-    //delay so we don't run the while loop into an overflow
-    simpleDelay();
-    checkForPause();
-    distanceTraveled = distanceTraveled + driveSpeed/10.0; //Temp place-holder
-  }
-  stopMotor(ID); //set all drive motor's speed to zero
-}
-
-/**
  * runs all Drive Motors, All 6 drive wheels turn (clockwise/counter-clockwise) uniformly
  * 
  * @param direction:  FOWARD(clockwise) or BACKWARD(counter-clock)
@@ -707,7 +779,6 @@ void eternalSleep(){
     delayMicroseconds(15000);
   }
 }
-
 
 /**
  * Extra Pause method, for people who just want to Stop
