@@ -49,19 +49,26 @@
 //int currentTime = 0;
 //int runTime = 30;
 
+//#include "iostream"
+
 //127 is Max Speed => our motors will not run above this
 //15  is Min Speed => any less and motors will not move
 int driveSpeed = 60;    //Speed of driveMotors going forward 
-int turnSpeed = 20;     //Speed of articulationMotors turning
-int turnDiveSpeed = 30; //Speed of driveMotors turning rover left/right
+int turnSpeed = 30;     //Speed of articulationMotors turning into positions
+int turnDiveSpeed = 30; //Speed of driveMotors turning while rover is turning left/right
 
 //double driveError;// = driveSpeed/2;  //The allowed room for error in drive forward X distance (if this is too small it drives infinitely!!!)
-double turnError;// = turnSpeed/2;    //The allowed room for error when turning the articulation motors to X angle
-double artHelperSpeed = 0.5;          //Speed modifier. Used so the drive wheels turn during wheel articulation smoothly (so the wheels don't drag when steering)
+double turnError = turnSpeed;    //The allowed room for error when turning the articulation motors to X angle
+double artHelperSpeed = 0.8;          //Speed modifier. Used so the drive wheels turn during wheel articulation smoothly (so the wheels don't drag when steering)
 double innerTurnSpeed = 0.8;          //Speed modifier. Used so the inner 2 drive wheels turn slower when the rover is turning in place
 
-const int FOWARD = 1;   //Clockwise rotation
-const int BACKWARD = 0; //Counter-Clockwise rotation
+boolean FOWARD = true;   //Clockwise rotation
+boolean BACKWARD = false; //Counter-Clockwise rotation
+//These need special
+const int FOWARD_DRIVE = 1;   //Clockwise rotation for drive wheels
+const int BACKWARD_DRIVE = 0; //Counter-Clockwise rotation for drive wheels
+const int FOWARD_ART = 4;     //Clockwise rotation for articulation wheels
+const int BACKWARD_ART =5; //Counter-Clockwise rotation for articulation wheels
 
 //List of "States" the 6 wheels can be facing, 1024 is 360*, 0 is 0* 
 int stateForward[6] =   {512, 512, 512, 512, 512, 512};  //orientation of wheels needed to drive straight/forward
@@ -90,15 +97,15 @@ int dumperSpeed = 30;
 //============================================================================================================================
 // Wheel-Variables, Varables for each individual wheel
 //============================================================================================================================
-int numberOfWheels = 15;
-unsigned char wheelID[15] =  {100, 129, 100, 100, 100, 100,         //Drive motors
-                              130, 100, 100, 100, 100, 100,         //articulation motors
+int numberOfWheels = 15;      //0,   1,   2,   3,   4,   5
+unsigned char wheelID[15] =  {133, 132, 131, 128, 129, 130,         //Drive motors
+                              133, 132, 131, 128, 129, 130,         //articulation motors
                               100, 100, 100};                       //Misc motors
 
 //If mecanical/electrical make a mistake and put a motor on backwards, set Direction to false to reverse rotations
-boolean wheelDirection[15] = {true, true, true, true, true, true,   //Drive motors
-                              true, true, true, true, true, true,   //articulation motors
-                              true, true, true};                    //Misc motors
+//boolean wheelDirection[15] = {true, true, true, true, true, true,   //Drive motors
+//                              true, true, true, true, true, true,   //articulation motors
+//                              true, true, true};                    //Misc motors
 
 //int wheelArticulation[15] =  {0, 0, 0, 0, 0, 0,                     //Drive motors
 //                              0, 0, 0, 0, 0, 0,                     //articulation motors
@@ -106,14 +113,14 @@ boolean wheelDirection[15] = {true, true, true, true, true, true,   //Drive moto
                               
 //Serial1 on pins 19 (RX) and 18 (TX), Serial2 on pins 17 (RX) and 16 (TX), Serial3 on pins 15 (RX) and 14 (TX)
 const int wheelSerial[15] =  {1, 1, 1, 1, 1, 1,
-                              1, 1, 1, 1, 1, 1,
+                              2, 2, 2, 2, 2, 2,
                               1, 1, 1};
-//String wheelName[15] =       {"fr", "mr", "rr", "fl", "ml", "rl",   //Drive motors  //"fr" means Fount-Right, ext
-//                              "fr", "mr", "rr", "fl", "ml", "rl",   //articulation motors //"rl" means Rear-Left
+//String wheelName[15] =       {"fr", "mr", "br", "fl", "ml", "bl",   //Drive motors  //"fr" means Fount-Right, ext
+//                              "fr", "mr", "br", "fl", "ml", "bl",   //articulation motors //"rl" means Rear-Left
 //                              "dumper12", "wench13", "digger14"};   //Misc motors
 
 const int wheelTrueZero[15] ={0, 0, 0, 0, 0, 0,                  //Drive motors
-                              0, 0, 0, 0, 0, 0,                  //articulation motors
+                              -206, 206, 0, 0, 0, 0,                  //articulation motors
                               0, 0, 0};                          //Misc motors
 
 
@@ -138,12 +145,13 @@ boolean ardReady =  true;
 //========================================================================================================
 void setup() {
   //Begin all Serial Writers
+  Serial.begin(9600);
   Serial1.begin(9600);
   Serial2.begin(9600);
   Serial3.begin(9600);
   //Sets the speed of all our drive motors and articulation motors
-  setDriveSpeed(driveSpeed);
-  setTurnSpeed(turnSpeed);
+  //setDriveSpeed(driveSpeed);
+  //setTurnSpeed(turnSpeed);
 
   //pinMode(13, OUTPUT);
   //nh.initNode();
@@ -165,17 +173,10 @@ void loop() {
   }
   else{
     //Test Code
-    
-    //eternalSleep();
     //driveForward(2000);     //1,000 is one rotation, 2,000 is two (approximation: varies by driveSpeed)
-    //setDriveSpeed(60);
-    //driveForward(1000);
-    //Serial.println("Start");
-    //setTurnSpeed(40);
-    setDriveSpeed(20);
-    driveForward(2000);
+    //driveForward(2000);
 //    setTurnSpeed(15);
-//    setAllArticulation(stateForward);
+    //setAllArticulation(stateForward);
     //int A = sensorValue -200; //-CW +CCW
     //int B = 300; //-CW +CCW
     //int BList[6] = {B,B,B, B,B,B};
@@ -184,6 +185,32 @@ void loop() {
     //setTurnSpeed(30);
     //setAllArticulation(stateForward);
     //stopAllMotor();
+
+//    for(int i = 0; i < 12; i++){
+//      runMotor(i, BACKWARD, 60);
+//      delay(140);
+//      runMotor(i, FOWARD, 60);
+//      delay(140);
+//      stopMotor(i);
+//      delay(500);
+//    }
+
+    //List of "States" the 6 wheels can be facing, 1024 is 360*, 0 is 0* 
+    //FOWARDS = CounterClock
+//    int start = analogRead(A3);
+//    //Serial.println("here");
+//    Serial.println(start);
+    //setOneArticulation(6, start-100);
+    
+    //setOneArticulation(6, 1);
+    //setOneArticulation(2+6, 400);
+
+    
+    runMotor(3+6, BACKWARD, 40); //===============================================================================================================================================
+    delay(1500);
+    stopMotor(3+6);
+    
+
     eternalSleep();
   }
   
@@ -504,6 +531,7 @@ void setAllArticulation(int degrees[6]){
 boolean setArticulation(int ID, int degrees){
   //update articulation
   int articulation = articulationRead(ID-6);
+  Serial.println(articulation);
   
   //if the motor is already within the turnError stop
   if(abs(articulation/*(ID-6)*/  - degrees) < turnError){
@@ -535,17 +563,17 @@ boolean setArticulation(int ID, int degrees){
  */
 int articulationRead(int articulationWheelID){
   switch(articulationWheelID){
-    case 0: return analogRead(A0);
+    case 0: return analogRead(A3);  //FR wheel
       break;
-    case 1: return analogRead(A0);
+    case 1: return analogRead(A4);  //MR wheel
       break;
-    case 2: return analogRead(A0);
+    case 2: return analogRead(A5);  //BR wheel
       break;
-    case 3: return analogRead(A0);
+    case 3: return analogRead(A1);  //FL wheel
       break;
-    case 4: return analogRead(A0);
+    case 4: return analogRead(A2);  //ML wheel
       break;
-    case 5: return analogRead(A0);
+    case 5: return analogRead(A3);  //BL wheel
       break;
     default: return 0;
       break;
@@ -580,47 +608,62 @@ void adjustForWheelOffset(int degrees[6]){
  * @param speed: the speed you want it to rotate
  *              0: Stopped, 
  */
-void runMotor(int ID, int commandInt, int speed){
+void runMotor(int ID, boolean commandInt, int speed){ //=====================================================================================================
   //If we are Pauseed, do not allow any Motor to run, only stop motor
   if(pause && speed != 0){return;}
+
+  //int speed = tempSpeed;
+//  if(wheelSerial[ID] == 2){
+//    speed = 255 - tempSpeed;
+//  }
   
   unsigned char address = wheelID[ID];
   unsigned char command;
   //reverse the wheels direction if need be
-  if(wheelDirection[ID] == true){
-    //wheel is facing correct direction
-    command = (char)commandInt;
+  if(commandInt == FOWARD && wheelSerial[ID] == 1){
+    //Drive Foward
+    command = (char)FOWARD_DRIVE;
   }
-  else{
-    //wheel is reversed, reverse the command
-    command = (char)(1-commandInt);
+  else if(commandInt == FOWARD && wheelSerial[ID] == 2){
+    //Art. foward
+    command = (char)FOWARD_ART;
+  }
+  else if(commandInt == BACKWARD && wheelSerial[ID] == 1){
+    //Drive Backward
+    command = (char)BACKWARD_DRIVE;
+  }
+  else if(commandInt == BACKWARD && wheelSerial[ID] == 2){
+    //Art. Backward
+    command = (char)BACKWARD_ART;
   }
   
   //checksum is an important variable/line of code for moving the motor
   unsigned char checksum = (address + command + ((char)speed)) & 0b01111111;
   
   // Write to the correct serial packet.
-  if(wheelSerial[ID] == 1){
+  if(wheelSerial[ID] == 1 || wheelSerial[ID] == 2){
     //This is the 4 lines of code that ACTUALY moves the motor, do not mess with
     Serial1.write(address);
     Serial1.write(command);
     Serial1.write(((char)speed));
     Serial1.write(checksum);
   }
-  else if(wheelSerial[ID] == 2){
-    Serial2.write(address);
-    Serial2.write(command);
-    Serial2.write(((char)speed));
-    Serial2.write(checksum);
-  }
-  else if(wheelSerial[ID] == 3){
-    Serial3.write(address);
-    Serial3.write(command);
-    Serial3.write(((char)speed));
-    Serial3.write(checksum);
-  }
+//  else if(wheelSerial[ID] == 2){  //TODO FIXED????
+//    Serial2.write(address);
+//    Serial2.write(command);
+//    Serial2.write(((char)speed));
+//    Serial2.write(checksum);
+//  }
+//  else if(wheelSerial[ID] == 3){
+//    Serial3.write(address);
+//    Serial3.write(command);
+//    Serial3.write(((char)speed));
+//    Serial3.write(checksum);
+//  }
   //so we don't overload any serial buffers
   simpleDelay();
+  //if we need to pause, pause
+  //checkForPause(); // <-- May need this -------------------------------------------------------------------
 }
 
 /**
@@ -643,32 +686,6 @@ void keepGoing(int distance, int speed, double timeMod){
     //Keeps track of how far we have traveled, based off time
     distanceTraveled += driveSpeed/timeMod;
   }
-}
-
-/**
- * Sets the driveSpeed and adjusts the values of driveError
- * #Called once in "setup"
- * 
- * @param newSpeed: the new speed of driveSpeed
- */
-void setDriveSpeed(int newSpeed){
-  //127 is Max Speed => our motors will not run above this
-  //15  is Min Speed => any less and motors will not move
-  driveSpeed = newSpeed;      //Speed of driveMotors going forward 
-  //driveError = driveSpeed/2;  //The allowed room for error in drive forward X distance
-}
-
-/**
- * Sets the turnSpeed and adjusts the valuse of turnError
- * #Called once in "setup"
- * 
- * @param newSpeed: the new speed of turnSpeed
- */
-void setTurnSpeed(int newSpeed){
-  //127 is Max Speed => our motors will not run above this
-  //15  is Min Speed => any less and motors will not move
-  turnSpeed = newSpeed;         //Speed of articulationMotors turning
-  turnError = turnSpeed/2;      //The allowed room for error when turning the articulation motors to X angle
 }
 
 /**
@@ -728,6 +745,17 @@ void updatePause(){
   commandEStop(rpiEStop);
 }
 
+/**
+ * Causes the code to stop forever
+ * Also stops all motors
+ */
+void eternalSleep(){
+  stopAllMotor();
+  while(true){
+    delayMicroseconds(15000);
+  }
+}
+
 //============================================================================================================================
 //Testing Methods (not used in final code)
 //============================================================================================================================
@@ -772,20 +800,31 @@ void runAllDriveUniform(int direction, int speed){
   }
 }
 
-//Causes the code to stop forever
-void eternalSleep(){
-  stopAllMotor();
-  while(true){
-    delayMicroseconds(15000);
-  }
+/**
+ * Sets the driveSpeed and adjusts the values of driveError (Safe to use)
+ * #Called once in "setup"
+ * 
+ * @param newSpeed: the new speed of driveSpeed
+ */
+void setDriveSpeed(int newSpeed){
+  //127 is Max Speed => our motors will not run above this
+  //15  is Min Speed => any less and motors will not move
+  driveSpeed = newSpeed;      //Speed of driveMotors going forward 
+  //driveError = driveSpeed/2;  //The allowed room for error in drive forward X distance
 }
 
 /**
- * Extra Pause method, for people who just want to Stop
+ * Sets the turnSpeed and adjusts the valuse of turnError (Safe to use)
+ * #Called once in "setup"
+ * 
+ * @param newSpeed: the new speed of turnSpeed
  */
-//void callPause(){ 
-//  commandPause(true); 
-//}
+void setTurnSpeed(int newSpeed){
+  //127 is Max Speed => our motors will not run above this
+  //15  is Min Speed => any less and motors will not move
+  turnSpeed = newSpeed;         //Speed of articulationMotors turning
+  turnError = turnSpeed/2;      //The allowed room for error when turning the articulation motors to X angle
+}
 
 
 
