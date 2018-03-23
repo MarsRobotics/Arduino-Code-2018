@@ -2,7 +2,7 @@
 ////#include <std_msgs/String.h>
 ////#include <std_msgs/Int16.h>
 ////#include <std_msgs/Float32.h>
-////#include <command2ros/ManualCommand.h>
+////#include <comand2ros/Manualcomand.h>
 ////#include <EncoderFL.h>
 //
 ////EncoderFL efl;
@@ -26,7 +26,10 @@
 
 #include <ros.h>
 #include <std_msgs/Int32.h>
-//#include <command2ros/MovementCommand.h>
+//#include <std_msgs/String.h>
+#include <std_msgs/Float32.h>
+#include <std_msgs/Bool.h>
+#include <command2ros/MovementCommand.h>
 ros::NodeHandle nh;
 
 /**
@@ -35,23 +38,6 @@ ros::NodeHandle nh;
 void messageCb(const std_msgs::Int32 &msg){
   float var=msg.data;
 }
-
-///**
-// * Updates the arduino with the current information from r-pi, and writes it to our program varables
-// */
-//void messageCb(const command2ros::MovementCommand &msg){
-//  //Information from our msg extracted and copied to our varables
-//  rpiDriveDistance= msg.driveDist;
-//  rpiTurnDegrees  = msg.turn;
-//  rpiDigger = msg.dig;
-//  rpiDumper = msg.dump;
-//  rpiPackIn = msg.packin;
-//  rpiEStop =  msg.eStop;
-//  //rpiCancel = false;
-//}
-
-//ros::Subscriber<command2ros::MovementCommand> sub("MovementCommand", &messageCb);
-ros::Subscriber<std_msgs::Int32> sub("std_msgs", &messageCb);
 
 //====================================================================================================================================================================
 // Program Variables
@@ -63,12 +49,12 @@ ros::Subscriber<std_msgs::Int32> sub("std_msgs", &messageCb);
 
 //127 is Max Speed => our motors will not run above this
 //15  is Min Speed => any less and motors will not move
-int driveSpeed = 60;    //Speed of driveMotors going forward 
+int driveSpeed = 50;    //Speed of driveMotors going forward 
 int turnSpeed = 30;     //Speed of articulationMotors turning into positions
 int turnDiveSpeed = 30; //Speed of driveMotors turning while rover is turning left/right
 
 //double driveError;// = driveSpeed/2;  //The allowed room for error in drive forward X distance
-double turnError = 10;//turnSpeed/2;    //The allowed room for error when turning the articulation motors to X angle
+double turnError = 5;//turnSpeed/2;    //The allowed room for error when turning the articulation motors to X angle
 double artHelperSpeed = 0.8;          //Speed modifier. Used so the drive wheels turn during wheel articulation smoothly (so the wheels don't drag when steering)
 double innerTurnSpeed = 0.8;          //Speed modifier. Used so the inner 2 drive wheels turn slower when the rover is turning in place
 
@@ -106,14 +92,19 @@ int dumperSpeed = 30;
 //====================================================================================================================================================================
 // Wheel-Variables, Varables for each individual wheel
 //====================================================================================================================================================================
-int numberOfWheels = 15;    //0/6  1/7  2/8  3/9  4/10 5/11
+int numberOfWheels = 15;       //0/6  1/7  2/8  3/9  4/10 5/11
+
+//String wheelName[15] =       {"fr-0", "mr-1", "br-2", "fl-3", "ml-4", "bl-5",   //Drive motors  //"fr" means Fount-Right, ext
+//                              "fr-6", "mr-7", "br-8", "fl-9", "ml-10", "bl-11",   //articulation motors //"rl" means Rear-Left
+//                              "dumper-12", "wench-13", "digger-14"};   //Misc motors
+
 //unsigned char wheelID[15] =  {133, 132, 131, 128, 129, 130,         //Drive motors
 //                              133, 132, 131, 128, 129, 130,         //articulation motors
 //                              100, 100, 100};                       //Misc motors
 
 //Test (disabled 2 back wheels)
-unsigned char wheelID[15] =  {133, 132, 131, 128, 0, 0,         //Drive motors
-                              133, 132, 131, 128, 0, 0,         //articulation motors
+unsigned char wheelID[15] =  {133, 132, 131, 128, 129, 0,         //Drive motors
+                              133, 132, 131, 128, 129, 0,         //articulation motors
                               100, 100, 100};                       //Misc motors
 
 //If mecanical/electrical make a mistake and put a motor on backwards, set Direction to false to reverse rotations
@@ -129,13 +120,17 @@ boolean wheelDirection[15] = {true, true, true, true, true, true,   //Drive moto
 const int wheelPinType[15] = {1, 1, 1, 1, 1, 1,
                               2, 2, 2, 2, 2, 2,
                               1, 1, 1};
-//String wheelName[15] =       {"fr", "mr", "br", "fl", "ml", "bl",   //Drive motors  //"fr" means Fount-Right, ext
-//                              "fr", "mr", "br", "fl", "ml", "bl",   //articulation motors //"rl" means Rear-Left
-//                              "dumper12", "wench13", "digger14"};   //Misc motors
-//
+
+//articulation sensors's true zero relative to our ideal true zero on rover
+const int wheelTrueZero[6] ={-16, 42, 9, 151, 416, 202};         
+
+//Speed modifier for wheels, (because wheels turn at diffrent speeds for unknown reasons), so they turn at same speed
+double wheelCorectFactor[15] =  {0.92, 1.00, 1.00, 1.02, 1.00, 1.00,        //Drive motors
+                                 2.00, 1.10, 2.00, 1.15, 1.00, 1.00,        //articulation motors
+                                 1.0, 1.0, 1.0};                      //Misc motors
 
 //================================================================================================================================================
-// R-Pi varables, R-Pi should be listening for and varables R-Pi writes to give commands 
+// R-Pi varables, R-Pi should be listening for and varables R-Pi writes to give comands 
 //================================================================================================================================================
 
 int rpiDriveDistance= 0;
@@ -147,8 +142,31 @@ boolean rpiPause =  false;
 boolean rpiEStop =  false;
 //boolean rpiCancel = false;
 
-//This should be true if we are ready for a new command
+//This should be true if we are ready for a new comand
 boolean ardReady =  true;
+int comandAccepted = 0;
+
+//================================================================================================================================================
+// Message Command
+//================================================================================================================================================
+
+/**
+ * Updates the arduino with the current information from r-pi, and writes it to our program varables
+ */
+void messageCb(const command2ros::MovementCommand &msg){
+  //Information from our msg extracted and copied to our varables
+  rpiDriveDistance= msg.driveDist;
+  rpiTurnDegrees  = msg.turn;
+  rpiDigger = msg.dig;
+  rpiDumper = msg.dump;
+  rpiPackIn = msg.packin;
+  rpiEStop =  msg.eStop;
+  rpiPause =  msg.stop;
+  //rpiCancel = false;
+}
+
+//ros::Subscriber<comand2ros::Movementcomand> sub("Movementcomand", &messageCb);
+ros::Subscriber<std_msgs::Int32> sub("std_msgs", &messageCb);
 
 //================================================================================================================================================
 // Setup and Main Loop, "Setup" is called once at start, "Loop" loops infinitly
@@ -164,12 +182,11 @@ void setup() {
   //setTurnSpeed(turnSpeed);
 
   //pinMode(13, OUTPUT);
-  nh.initNode();
-  nh.subscribe(sub);
+//  nh.initNode();
+//  nh.subscribe(sub);
 }
 
 
-const int wheelTrueZero[6] ={-16, 42, 9, 151, 416, 202};         //articulation motor's true zero relative to our ideal true zero on rover//HERE FOR TESTING MOVE BACK===============================
 
 void loop() {
   //Main loop, reads from 
@@ -177,13 +194,20 @@ void loop() {
   if(RPiActive == true){
     nh.spinOnce(); //ROS updates comunication
     //This should be our real looping method call, (temp. disabled for testing)
-    commandDriveFORWARD(rpiDriveDistance);
-    commandTurnRover(rpiTurnDegrees);
-    commandDigger(rpiDigger);
-    commandDumper(rpiDumper);
-    commandPackIn(rpiPackIn);
-    commandSetPause(rpiPause);
-    commandEStop(rpiEStop);
+//    comandDriveForward(rpiDriveDistance);
+//    comandTurnRover(rpiTurnDegrees);
+//    comandDigger(rpiDigger);
+//    comandDumper(rpiDumper);
+//    comandPackIn(rpiPackIn);
+//    comandSetPause(rpiPause);
+//    comandEStop(rpiEStop);
+    if(rpiPackIn == true){
+      digitalWrite(13, HIGH);
+    }
+    else{
+      digitalWrite(13, LOW);
+    }
+    
   }
   else{
     //for testing
@@ -194,15 +218,16 @@ void loop() {
 //    int rB = 256; //7, 8, 9
 //    int fB = 768;
 
-    setAllArticulation(stateStorage); //stateTurning    stateStorage    stateForward
-    setAllArticulation(stateTurning);
-    setAllArticulation(stateForward);
-    //commandDriveFORWARD(10000);
+//    setAllArticulation(stateStorage); //stateTurning    stateStorage    stateForward
+//    setAllArticulation(stateTurning);
+//    setAllArticulation(stateForward);
+//    comandDriveForward(10000);
     //testArticulation(stateForward);
-    testArticulation(stateStorage);
+//    testArticulation(stateForward);
+
 
 //    runMotor(8, FORWARD, 30); //BACKWARD(CC)   FORWARD(CW) 
-//    runMotor(6, BACKWARD, 30);
+//    runMotor(10, FORWARD, 40);
 //    delay(1000);
 //    stopAllMotor();
 //    delay(3000);
@@ -297,14 +322,15 @@ void loop() {
  * Prints the current Articulation reads for all 6 articulation sensors
  */
 void printArticulation(){
-  String testExtra = "Relative to wheelTrueZero:   FR: "+(String)(analogRead(A3)-wheelTrueZero[0])+
+  String articulation = "Relative to wheelTrueZero:   FR: "+
+                           (String)(analogRead(A3)-wheelTrueZero[0])+
                 ",\t MR: "+(String)(analogRead(A4)-wheelTrueZero[1])+
                 ",\t BR: "+(String)(analogRead(A5)-wheelTrueZero[2])+
             ",\t\t\t FL: "+(String)(analogRead(A0)-wheelTrueZero[3])+
                 ",\t ML: "+(String)(analogRead(A1)-wheelTrueZero[4])+
                 ",\t BL: "+(String)(analogRead(A2)-wheelTrueZero[5]);
 
-  Serial.println(testExtra);
+  Serial.println(articulation);
 }
 /**
  * prints the current articulation and prints how far it is from a specific stateCur[6]
@@ -313,22 +339,24 @@ void testArticulation(int stateCur[]){
   //printArticulation();
   
   //prints the basic data the sensors are giving
-  String testArt2= "Raw Data given by sensors:   FR: "+(String)(analogRead(A3)+0)+
+  String rawDis= "Raw Data given by sensors:   FR: "+
+                          (String)(analogRead(A3)+0)+
                ",\t MR: "+(String)(analogRead(A4)+0)+
                ",\t BR: "+(String)(analogRead(A5)+0)+
            ",\t\t\t FL: "+(String)(analogRead(A0)+0)+
                ",\t ML: "+(String)(analogRead(A1)+0)+
                ",\t BL: "+(String)(analogRead(A2)+0);
-  Serial.println(testArt2);
+  Serial.println(rawDis);
 
   //Prints the distances each wheel needs to go (assuming the phisical wheels are pointing in "sateCur[]")
-  String testArt = "Dis to correct Articulation: FR: "+(String)(analogRead(A3)-wheelTrueZero[0]-stateCur[0])+
+  String dis2Correct = "Dis to correct Articulation: FR: "+
+                            (String)(analogRead(A3)-wheelTrueZero[0]-stateCur[0])+
                ",\t MR:   "+(String)(analogRead(A4)-wheelTrueZero[1]-stateCur[1])+
                ",\t BR:   "+(String)(analogRead(A5)-wheelTrueZero[2]-stateCur[2])+
            ",\t\t\t FL:   "+(String)(analogRead(A0)-wheelTrueZero[3]-stateCur[3])+
                ",\t ML:   "+(String)(analogRead(A1)-wheelTrueZero[4]-stateCur[4])+
                ",\t BL:   "+(String)(analogRead(A2)-wheelTrueZero[5]-stateCur[5]);
-  Serial.println(testArt);
+  Serial.println(dis2Correct);
   
 
   String newArt = "\n[New] wheelTrueZero = {"+
@@ -342,14 +370,14 @@ void testArticulation(int stateCur[]){
 }
 
 //====================================================================================================================================================================
-// Command Methods, these are the only ones the R-pi is expected to call
+// comand Methods, these are the only ones the R-pi is expected to call
 //====================================================================================================================================================================
 /**
  * Sets the Rover's wheels to point straight and drives FORWARD
  * 
  * @param distance: Distance we want to drive FORWARD (enter negitive number for backwards)
  */
-void commandDriveFORWARD(int distance){
+void comandDriveForward(int distance){
   //if our value is zero our R-Pi didn't actualy want to call this method, also we want to turn the rover first
   if(distance == 0 || pause){return;}
   rpiDriveDistance = 0; //TODO-------------------------------------------------------------------------
@@ -367,7 +395,7 @@ void commandDriveFORWARD(int distance){
  * 
  * @param degrees: Degrees we want to turn Rover (enter negitive number for Left)
  */
-void commandTurnRover(int degrees){
+void comandTurnRover(int degrees){
   //if our value is zero our R-Pi didn't actualy want to call this method
   if(degrees == 0 || pause){return;}
   rpiTurnDegrees = 0; //TODO-------------------------------------------------------------------------
@@ -385,7 +413,7 @@ void commandTurnRover(int degrees){
  * 
  * @param startDigger: true if we want to dig now
  */
-void commandDigger(boolean startDigger){
+void comandDigger(boolean startDigger){
   //If digger in is false we didn't actualy want to call this method
   if(startDigger == false || pause){ return;}
   //move wench down, run digger, move wench back up
@@ -399,7 +427,7 @@ void commandDigger(boolean startDigger){
  * 
  * @param startDumper: true if we want to dump right now
  */
-void commandDumper(boolean startDumper){
+void comandDumper(boolean startDumper){
   //If dumper in is false we didn't actualy want to call this method
   if(startDumper == false || pause){ return;}
   //run the dumper for dumperTime
@@ -412,7 +440,7 @@ void commandDumper(boolean startDumper){
  * @param packIn: true, if we actualy want to pack our wheels in
  *                false, if we don't actualy want to pack wheels in
  */
-void commandPackIn(boolean packIn){ 
+void comandPackIn(boolean packIn){ 
   //If pack in is false we didn't actualy want to call this method
   if(packIn == false || pause){ return;}
   rpiDriveDistance = 0;//TODO-------------------------------------------------------------------------
@@ -424,13 +452,13 @@ void commandPackIn(boolean packIn){
 }
 
 /**
- * If we need to Pause use this command, Stops motors, banns new commands, and causes delays to last forever, untill unpaused
+ * If we need to Pause use this comand, Stops motors, banns new comands, and causes delays to last forever, untill unpaused
  * 
  * @param newPause: the new Pause, true for stop, false for resume
  *     => true:    Stop all motors and ban motors from turning
  *     => false:   Allow motors to move again (unpause)
  */
-void commandSetPause(boolean tempPause){
+void comandSetPause(boolean tempPause){
   if(tempPause == true && pause){
     //Do nothing R-Pi requested Pause and we are already Pauseed
     return;
@@ -453,7 +481,7 @@ void commandSetPause(boolean tempPause){
 /**
  * Irreversably stop all motors and sleep forever
  */
-void commandEStop(boolean tempEStop){
+void comandEStop(boolean tempEStop){
   if(tempEStop){
     //Stops all Motors and sleeps forever
     eternalSleep();
@@ -461,13 +489,13 @@ void commandEStop(boolean tempEStop){
 }
 
 //====================================================================================================================================================================
-// Drive Methods, used to allow Drive Commands drive Rover correct distances
+// Drive Methods, used to allow Drive comands drive Rover correct distances
 //====================================================================================================================================================================
 
 /**
  * Drive forward X distance, (does not reposition wheels)
  * if distance is negative => go backwards
- * #Support method for commandDriveFORWARD
+ * #Support method for comandDriveForward
  * 
  * @param distance: target distance we want to rover to travel
  */
@@ -527,7 +555,7 @@ void stopAllDrive(){
 /**
  * Turn Rover Right X degrees
  * if degrees is negative => go backwards
- * #Support Method for commandTurnRover
+ * #Support Method for comandTurnRover
  * 
  * @param:  degrees, target degrees we want to rover to turn
  */
@@ -579,7 +607,7 @@ void activeTurn(int direction, int speed){
 
 /**
  * drives one wheel forward to a given distance (Safe to run)
- * #Support Method for commandDigger and commandDumper
+ * #Support Method for comandDigger and comandDumper
  * 
  * @param ID:       the id of the drive wheel we want to move
  * @param distance: the distance we want it to travel
@@ -735,14 +763,14 @@ void adjustForWheelOffset(int degrees[6]){
  * runs a motor given motorID, direction, and speed
  * 
  * @param ID: the wheelID[] position
- * @param commandInt:  the direction we want to rotate the wheel
+ * @param comandInt:  the direction we want to rotate the wheel
  *              0: REVERSE(counter-clock), 1: FORWARD(clockwise)
- * @param speed: the speed you want it to rotate
- *              0: Stopped, 
+ * @param tempSpeed: the speed you want it to rotate
+ *              0: Stopped, else Go.
  */
-void runMotor(int ID, int commandInt, int speed){ //=====================================================================================================
+void runMotor(int ID, int comandInt, int tempSpeed){ //=====================================================================================================
   //If we are Pauseed, do not allow any Motor to run, only stop motor
-  if(pause && speed != 0){return;}
+  if(pause && tempSpeed != 0){return;}
 
   //int speed = tempSpeed;
 //  if(wheelPinType[ID] == 2){
@@ -750,56 +778,64 @@ void runMotor(int ID, int commandInt, int speed){ //============================
 //  }
   
   unsigned char address = wheelID[ID];
-  unsigned char command;
+  unsigned char comand;
   //reverse the wheels direction if need be
   if(wheelPinType[ID] == 1){
     //Move Drive Motor
-    if((wheelDirection[ID] == true && commandInt == FORWARD) || 
-       (wheelDirection[ID] == false && commandInt == BACKWARD)){
+    if((wheelDirection[ID] == true && comandInt == FORWARD) || 
+       (wheelDirection[ID] == false && comandInt == BACKWARD)){
       //Drive FORWARD (Clockwise)
-      command = (char)FORWARD_DRIVE;
+      comand = (char)FORWARD_DRIVE;
     }
-    else if ((wheelDirection[ID] == true && commandInt == BACKWARD) ||
-             (wheelDirection[ID] == false && commandInt == FORWARD)){
+    else if ((wheelDirection[ID] == true && comandInt == BACKWARD) ||
+             (wheelDirection[ID] == false && comandInt == FORWARD)){
       //Drive Backward (Counter-Clockwise)
-      command = (char)BACKWARD_DRIVE;
+      comand = (char)BACKWARD_DRIVE;
     }
     
   }
   else if(wheelPinType[ID] == 2){
     //Move Articulation Motor
-    if((wheelDirection[ID] == true && commandInt == FORWARD) || 
-       (wheelDirection[ID] == false && commandInt == BACKWARD)){
+    if((wheelDirection[ID] == true && comandInt == FORWARD) || 
+       (wheelDirection[ID] == false && comandInt == BACKWARD)){
       //Art. FORWARD (Clockwise)
-      command = (char)FORWARD_ART;
+      comand = (char)FORWARD_ART;
     }
-    else if ((wheelDirection[ID] == true && commandInt == BACKWARD) || 
-             (wheelDirection[ID] == false && commandInt == FORWARD)){
+    else if ((wheelDirection[ID] == true && comandInt == BACKWARD) || 
+             (wheelDirection[ID] == false && comandInt == FORWARD)){
       //Art. Backward (Counter-Clockwise)
-      command = (char)BACKWARD_ART;
+      comand = (char)BACKWARD_ART;
     }
+  }
+
+  //adjust speed for corection factor
+  int speed = (int)(tempSpeed*wheelCorectFactor[ID]);
+  if(speed > 127){
+    speed = 127;
+    String errorMsgSpeed = "Error: Motor #" + (String)(ID) + " has been given a speed greater than allowed, motor was slown down to it's max speed";
+    Serial.println(errorMsgSpeed);
   }
   
   //checksum is an important variable/line of code for moving the motor
-  unsigned char checksum = (address + command + ((char)speed)) & 0b01111111;
+  unsigned char checksum = (address + comand + ((char)speed)) & 0b01111111;
   
   // Write to the correct serial packet.
   if(wheelPinType[ID] == 1 || wheelPinType[ID] == 2){
     //This is the 4 lines of code that ACTUALY moves the motor, do not mess with
     Serial1.write(address);
-    Serial1.write(command);
+    Serial1.write(comand);
     Serial1.write(((char)speed));
     Serial1.write(checksum);
   }
 //  else if(wheelPinType[ID] == 2){  //TODO FIXED????
 //    Serial2.write(address);
-//    Serial2.write(command);
+//    Serial2.write(comand);
 //    Serial2.write(((char)speed));
 //    Serial2.write(checksum);
 //  }
 //  else if(wheelPinType[ID] == 3){
 //    Serial3.write(address);
-//    Serial3.write(command);
+//    Serial3.write(comand);
 //    Serial3.write(((char)speed));
 //    Serial3.write(checksum);
 //  }
@@ -879,13 +915,13 @@ void checkForPause(){
 }
 
 /**
- * updates the Pause command,
+ * updates the Pause comand,
  * #Support Method for checkForPause
  */
 void updatePause(){
   //nh.spinOnce(); //ROS updates comunication //-----------------------------------------------------------------------------------------------
-  commandSetPause(rpiPause);
-  commandEStop(rpiEStop);
+  comandSetPause(rpiPause);
+  comandEStop(rpiEStop);
 }
 
 /**
@@ -907,12 +943,12 @@ void eternalSleep(){
  * Runs all Articulation Motors (For Testing purposes ONLY)
  * Should not be used in final code (Will rip out Wires)
  * 
- * @param command:  direction we want to go
+ * @param comand:  direction we want to go
  * @param speed:    the speed we want the articulation motors to turn
  */
-void runAllArticulation(boolean command, int speed){
+void runAllArticulation(boolean comand, int speed){
   for(int i = 6; i < 12; i++){
-    runMotor(i, command, speed);
+    runMotor(i, comand, speed);
   }
 }
 
