@@ -1,63 +1,18 @@
-////#include <ros.h>
-////#include <std_msgs/String.h>
-////#include <std_msgs/Int16.h>
-////#include <std_msgs/Float32.h>
-////#include <comand2ros/Manualcomand.h>
-////#include <EncoderFL.h>
-//
-////EncoderFL efl;
-//
-////The speed 
-//const double ARTICULATION_DRIVE_SPEED = 6260.0 / 7521.0;
-//// This corresponds to the "maximum speed" available to the robot.
-//const int MAX_DRIVE_SPEED = 30;
-//
-//bool motorInMotion;
-//
-//// This node handle represents this arduino. 
-////ros::NodeHandle sabertoothDriverNode; //TODO maybie?
-//====================================================================================================================================================================
-//====================================================================================================================================================================
-//====================================================================================================================================================================
-
-//====================================================================================================================================================================
-// ROS Variables
-//====================================================================================================================================================================
-
-#include <ros.h>
-#include <std_msgs/Int32.h>
-//#include <std_msgs/String.h>
-#include <std_msgs/Float32.h>
-#include <std_msgs/Bool.h>
-#include <command2ros/MovementCommand.h>
-ros::NodeHandle nh;
-
-/**
- * Test messageCb (copied from internet)
- */
-void messageCb(const std_msgs::Int32 &msg){
-  float var=msg.data;
-}
-
 //====================================================================================================================================================================
 // Program Variables
 //====================================================================================================================================================================
-//int currentTime = 0;
-//int runTime = 30;
-
-//#include "iostream"
 
 //127 is Max Speed => our motors will not run above this
 //15  is Min Speed => any less and motors will not move
 int driveSpeed = 50;    //Speed of driveMotors going forward 
 int turnSpeed = 30;     //Speed of articulationMotors turning into positions
-int turnDiveSpeed = 30; //Speed of driveMotors turning while rover is turning left/right
+int turnDriveSpeed = 40; //Speed of driveMotors turning while rover is turning left/right
 
-//double driveError;// = driveSpeed/2;  //The allowed room for error in drive forward X distance
-double turnError = 5;//turnSpeed/2;    //The allowed room for error when turning the articulation motors to X angle
-double artHelperSpeed = 0.8;          //Speed modifier. Used so the drive wheels turn during wheel articulation smoothly (so the wheels don't drag when steering)
-double innerTurnSpeed = 0.8;          //Speed modifier. Used so the inner 2 drive wheels turn slower when the rover is turning in place
+double turnError = 2;         //The allowed room for error when turning the articulation motors to X angle
+double artHelperSpeed = 1.1;  //Speed modifier. Used so the drive wheels turn during wheel articulation smoothly (so the wheels don't drag when steering)
+double innerTurnSpeed = 0.8;  //Speed modifier. Used so the inner 2 drive wheels turn slower when the rover is turning in place
 
+//Booleans passed to runMotor to tell it what direction to turn
 boolean FORWARD = true;   //Clockwise rotation
 boolean BACKWARD = false; //Counter-Clockwise rotation
 //These need special ints to control moter rotations
@@ -66,15 +21,21 @@ const int BACKWARD_DRIVE = 0; //Counter-Clockwise rotation for drive wheels
 const int FORWARD_ART = 4;     //Clockwise rotation for articulation wheels
 const int BACKWARD_ART =5;    //Counter-Clockwise rotation for articulation wheels
 
+
 //List of "States" the 6 wheels can be facing, 1024 is 360*, 0 is 0* 
 int stateStorage[6] =   {768, 256, 256, 256, 768, 768};  //orientation of wheels for the storage/collapsed position, (the position our robot will start RMC at)
 int stateForward[6] =   {256, 768, 768, 768, 256, 256};  //orientation of wheels needed to drive straight/forward
-int stateTurning[6] =   {384, 768, 640, 640, 256, 384};  //orientation of wheels needed to turn the robot
+int stateTurning[6] =   {419, 768, 605, 605, 256, 419};  //orientation of wheels needed to turn the robot
 
 int newDegrees[6] = {0,0,0,0,0,0};  //storage value used to pass an array of Ints between methods //(Should be a better way of doing this, but IDK)
 
-boolean pause = false; //If we are Pauseed we don't run motors pauses program
+//Storage to remember if manual buttons are being pressed, used to detect a change in manual commands from R-Pi
+int manualForwardCur = 0;
+int manualTurnCur = 0;
 
+//If Arduino is currently paused or is trying to cancel it's current command
+//boolean ardPause = false;   //If we are Paused we don't run motors, also pauses program
+boolean ardCancel = false;  //If we have been set the "cancel" command, we stop all, and all new methods not start
 
 //====================================================================================================================================================================
 // Digger and Dumper Varables
@@ -95,231 +56,294 @@ int dumperSpeed = 30;
 int numberOfWheels = 15;       //0/6  1/7  2/8  3/9  4/10 5/11
 
 //String wheelName[15] =       {"fr-0", "mr-1", "br-2", "fl-3", "ml-4", "bl-5",   //Drive motors  //"fr" means Fount-Right, ext
-//                              "fr-6", "mr-7", "br-8", "fl-9", "ml-10", "bl-11",   //articulation motors //"rl" means Rear-Left
-//                              "dumper-12", "wench-13", "digger-14"};   //Misc motors
+//                              "fr-6", "mr-7", "br-8", "fl-9", "ml-10", "bl-11", //articulation motors //"rl" means Rear-Left
+//                              "dumper-12", "wench-13", "digger-14"};            //Misc motors
 
 //unsigned char wheelID[15] =  {133, 132, 131, 128, 129, 130,         //Drive motors
 //                              133, 132, 131, 128, 129, 130,         //articulation motors
 //                              100, 100, 100};                       //Misc motors
 
-//Test (disabled 2 back wheels)
-unsigned char wheelID[15] =  {133, 132, 131, 128, 129, 0,         //Drive motors
-                              133, 132, 131, 128, 129, 0,         //articulation motors
-                              100, 100, 100};                       //Misc motors
+//Test (disabled some wheels by seting their ID to Zero)
+unsigned char wheelID[15] =  {133, 132, 0, 128, 129, 130,         //Drive motors
+                              133, 132, 0, 128, 129, 130,         //articulation motors
+                              0, 0, 0};                         //Misc motors
 
 //If mecanical/electrical make a mistake and put a motor on backwards, set Direction to false to reverse rotations
 boolean wheelDirection[15] = {true, true, true, true, true, true,   //Drive motors
-                              false, true, true, true, true, true,   //articulation motors
+                              false, true, true, true, true, false, //articulation motors
                               true, true, true};                    //Misc motors
 
-//int wheelArticulation[15] =  {0, 0, 0, 0, 0, 0,                     //Drive motors
-//                              0, 0, 0, 0, 0, 0,                     //articulation motors
-//                              0, 0, 0};                             //Misc motors
-                              
 //Serial1 on pins 19 (RX) and 18 (TX), Serial2 on pins 17 (RX) and 16 (TX), Serial3 on pins 15 (RX) and 14 (TX)
+//Depending on which wheel type it is, we need to give it a different type of command to move the motor
 const int wheelPinType[15] = {1, 1, 1, 1, 1, 1,
                               2, 2, 2, 2, 2, 2,
                               1, 1, 1};
 
 //articulation sensors's true zero relative to our ideal true zero on rover
-const int wheelTrueZero[6] ={-16, 42, 9, 151, 416, 202};         
+const int wheelTrueZero[6] = {68, 21, 170, -18, -30, 58};
 
 //Speed modifier for wheels, (because wheels turn at diffrent speeds for unknown reasons), so they turn at same speed
-double wheelCorectFactor[15] =  {0.92, 1.00, 1.00, 1.02, 1.00, 1.00,        //Drive motors
-                                 2.00, 1.10, 2.00, 1.15, 1.00, 1.00,        //articulation motors
+double wheelCorectFactor[15] =  {0.955, 1.06, 1.04, 1.07, 1.00, 1.00, //Drive motors
+                                 2.00, 1.15, 2.30, 1.15, 1.10, 1.20,  //articulation motors
                                  1.0, 1.0, 1.0};                      //Misc motors
 
+//====================================================================================================================================================================
+// ROS Includes, used to understand passed mesages between the arduino and R-Pi
+//====================================================================================================================================================================
+
+//Example I followed to set up ros publisher:   http://wiki.ros.org/rosserial_arduino/Tutorials/Hello%20World
+
+#include <ros.h>
+#include <std_msgs/Int32.h>
+#include <std_msgs/String.h>
+#include <std_msgs/Float32.h>
+#include <std_msgs/Bool.h>
+#include <command2ros/MovementCommand.h>  //message type we get from R-Pi
+#include <command2ros/ArduinoMessage.h>   //primary message we send to R-Pi, reports errors, data
+#include <command2ros/Feedback.h>         //secondary message we send to R-Pi, simply a String for a Human to read what Arduino is thinking/doing
+ros::NodeHandle nh;   //Our Ros Node
+
 //================================================================================================================================================
-// R-Pi varables, R-Pi should be listening for and varables R-Pi writes to give comands 
+// Mesage Varables, (rpi)varables are Receved from R-Pi, (ard)varables are feedback Arduino sends to the R-Pi
 //================================================================================================================================================
 
-int rpiDriveDistance= 0;
-int rpiTurnDegrees  = 0;
-boolean rpiDigger = false;
-boolean rpiDumper = false;
-boolean rpiPackIn = false;
-boolean rpiPause =  false;
-boolean rpiEStop =  false;
-//boolean rpiCancel = false;
+/*
+ * R-Pi Varables that Arduion recieved, (commands)
+ */
+int rpiDriveDistance= 0;      //how far R-Pi wants Arduino to Drive Forward (negative for Drive Backwards)
+int rpiTurnDegrees  = 0;      //how far R-Pi wants Arduino to Turn Right    (negative for Turn Left)
+boolean rpiDigger = false;    //true, to dig
+boolean rpiDumper = false;    //true, to dump
+boolean rpiPackIn = false;    //true, to pack in our wheels (too the starting/storage state)
+boolean rpiPause =  false;    //true, to pause, stop all motors and acept no new command till [rpiPause =  false;] is sent
+boolean rpiEStop =  false;    //true, to Stop Forever
+boolean rpiCancel = false;    //true, to stop and cancel the current command
+boolean rpiManual = false;    //true, to accept the "manual" commands
+int rpiManualDrive = 0;       //(only activates if rpiManual == true;) 1: go Forward, -1: go backward, 0: stop going forward/backward
+int rpiManualTurn = 0;        //(only activates if rpiManual == true;) 1: turn Right, -1: turn Left,   0: stop going right/left
+int rpiSerialID = -1;         //what message number R-Pi is on (so Arduino knows this is a fresh message)
 
-//This should be true if we are ready for a new comand
-boolean ardReady =  true;
-int comandAccepted = 0;
+/*
+ * Ardino Varables, Sent to R-Pi (feedback)
+ */
+boolean ardReady =  true;     //This should be true if we are ready for a new command
+int ardSerialID = -1;         //What RPi msg Number arduino is currently working on
+int ardMsgID = 0;             //What msg number we are on (so R-Pi knows when a fresh mesage is sent)
+String ardProgress = "";      //String that reports the Arduino's current state (for human user)
+
+//Types of errors Arduino can experence, (NOT CURENTLY IN USE)
+boolean ardErrorDriving = false;    //experenced error while driving forward or backwards
+boolean ardErrorDigging = false;    //experenced error while digging
+boolean ardErrorDumping = false;    //experenced error while dumping
+boolean ardErrorTurning = false;    //experenced error while turing left or right
 
 //================================================================================================================================================
 // Message Command
 //================================================================================================================================================
 
 /**
- * Updates the arduino with the current information from r-pi, and writes it to our program varables
+ * Updates the arduino with the current information from R-Pi, and writes it to our program varables
  */
 void messageCb(const command2ros::MovementCommand &msg){
   //Information from our msg extracted and copied to our varables
-  rpiDriveDistance= msg.driveDist;
-  rpiTurnDegrees  = msg.turn;
-  rpiDigger = msg.dig;
-  rpiDumper = msg.dump;
-  rpiPackIn = msg.packin;
-  rpiEStop =  msg.eStop;
-  rpiPause =  msg.stop;
-  //rpiCancel = false;
+  rpiDriveDistance= (int)(msg.driveDist); //Int32
+  rpiTurnDegrees  = (int)(msg.turn);      //Int32
+  rpiDigger = msg.dig;      //bool
+  rpiDumper = msg.dump;     //bool
+  rpiPackIn = msg.packin;   //bool
+  rpiEStop =  msg.eStop;    //bool
+  rpiPause =  msg.pause;    //bool
+  rpiCancel = msg.cancel;   //bool
+  rpiSerialID = msg.serialID;  //Int32
+  rpiManual   = msg.manual;    //bool
+  rpiManualDrive = msg.manualDrive; //Int32
+  rpiManualTurn = msg.manualTurn;   //Int32
 }
 
-//ros::Subscriber<comand2ros::Movementcomand> sub("Movementcomand", &messageCb);
-ros::Subscriber<std_msgs::Int32> sub("std_msgs", &messageCb);
+
+//For comunicating with Ros subscibers and pubishers have to be bellow "messageCb", and above "updateMessage"
+command2ros::ArduinoMessage ardMsgCb;
+command2ros::Feedback ardHumanMsgCb;
+ros::Subscriber<command2ros::MovementCommand> sub("MovementCommand", &messageCb); //Subscribe to "MovementCommand" (Msg we get from R-Pi)
+ros::Publisher ard_msg ("ArduinoFeedback", &ardMsgCb); //Publish to "ArduinoMessage" (Msg we send to R-Pi) 
+ros::Publisher ard_msg_hr ("HumanReadable", &ardHumanMsgCb); //Publish to "HumanReadable" (Another Msg we send to R-Pi) <= only containes a String
+
+/**
+ * Sends all Arduino's data to R-Pi.
+ * uses 2 diffrent messages: "ArduinoMessage" -> All Data
+ *                           "HumanReadable"  -> Single String for Human User to read
+ */
+void updateMessage(){
+  //sending all our data to R-Pi useing "ArduinoMessage"
+  ardMsgCb.ready        = ardReady;           //bool
+  ardMsgCb.serialID     = ardSerialID;        //Int32
+  ardMsgCb.errorDriving = ardErrorDriving;    //bool
+  ardMsgCb.errorDigging = ardErrorDigging;    //bool
+  ardMsgCb.errorDumping = ardErrorDumping;    //bool
+  ardMsgCb.errorTurning = ardErrorTurning;    //bool
+  ardMsgCb.messageID    = ardMsgID;           //Int32
+  ardMsgCb.progress = ardProgress.c_str();    //char*
+
+  //sending our String to R-Pi/User "HumanReadable"
+  ardHumanMsgCb.msg = ardProgress.c_str();    //char* 
+
+  //publish both our feed back messages
+  ard_msg.publish(&ardMsgCb);
+  ard_msg_hr.publish(&ardHumanMsgCb);         //char*
+  //update our node with the new published mesages
+  nh.spinOnce();
+}
 
 //================================================================================================================================================
 // Setup and Main Loop, "Setup" is called once at start, "Loop" loops infinitly
 //================================================================================================================================================
+/**
+ * Special Arduino Methode: Runs once at start.
+ */
 void setup() {
   //Begin all Serial Writers
   Serial.begin(9600);
   Serial1.begin(9600);
-  Serial2.begin(9600);
-  Serial3.begin(9600);
-  //Sets the speed of all our drive motors and articulation motors
-  //setDriveSpeed(driveSpeed);
-  //setTurnSpeed(turnSpeed);
-
-  //pinMode(13, OUTPUT);
-//  nh.initNode();
-//  nh.subscribe(sub);
+  Serial2.begin(9600);//TODO may not be needed
+  Serial3.begin(9600);//TODO may not be needed
+  
+  //initialize our Ros Node, and Subscibe to R-Pi's Message
+  nh.initNode();
+  nh.subscribe(sub);
+  //"advertise" our 2 mesages
+  nh.advertise(ard_msg);
+  nh.advertise(ard_msg_hr);
+  //checks to make sure all articultion sensors giving an understanable reading
+  systemCheck();
+  msg2user("\n===Ready-To-Start===\n");
+  nh.spinOnce(); //ROS updates comunication
 }
 
+int RPiActive = 1;
+int testing = 2;
+int mode = RPiActive;// testing; //if(mode == testing){we will use Serial.print to print msg2user}
+int tempSerialID = -999;
 
-
+/*
+ * Special Arduino Methode: Main loop, loops infinitly.
+ */
 void loop() {
-  //Main loop, reads from 
-  boolean RPiActive = false;
-  if(RPiActive == true){
-    nh.spinOnce(); //ROS updates comunication
-    //This should be our real looping method call, (temp. disabled for testing)
-//    comandDriveForward(rpiDriveDistance);
-//    comandTurnRover(rpiTurnDegrees);
-//    comandDigger(rpiDigger);
-//    comandDumper(rpiDumper);
-//    comandPackIn(rpiPackIn);
-//    comandSetPause(rpiPause);
-//    comandEStop(rpiEStop);
-    if(rpiPackIn == true){
-      digitalWrite(13, HIGH);
+  if(mode == RPiActive){
+    //This should be our real looping method call, (can be disabled for testing)
+
+    //Finds the newest messge from R-Pi
+    while(tempSerialID != rpiSerialID){
+      tempSerialID = rpiSerialID;
+      nh.spinOnce(); //ROS updates comunication
     }
-    else{
-      digitalWrite(13, LOW);
+
+    //If we have a new rpiSerialID, we have a fresh mesage. So we have to execute the new command
+    if(ardSerialID != rpiSerialID){
+      ardSerialID = rpiSerialID;  //Update new SerialID
+      
+      //Only executes one command, per new rpiSerialID (prevents potential conflicts)
+      if(rpiEStop){
+        commandEStop(rpiEStop);               //permently stop rover, and disables Arduino
+      }else if(rpiPause/* != ardPause*/){
+        commandPause(rpiPause);               //Stops motors and waits till rpiPause==false
+      }else if(rpiDriveDistance != 0){
+        commandDriveForward(rpiDriveDistance);//Automated drive forward
+      }else if(rpiTurnDegrees != 0){
+        commandTurnRover(rpiTurnDegrees);     //Automated turn Rover X distance
+      }else if(rpiDigger){
+        commandDigger(rpiDigger);             //Automated run Digger X distance
+      }else if(rpiDumper){
+        commandDumper(rpiDumper);             //Automated run Dumper
+      }else if(rpiPackIn){
+        commandPackIn(rpiPackIn);             //Automated "PackIn" to our starting state
+      }else if(rpiCancel){
+        //R-Pi asked for cancel, but where not running a command
+        manualTurnCur = 0;  
+        manualForwardCur = 0;
+        msg2user("/t <<<Command Canceled>>> (Outside Known Method=>Just Stoping Motors)\n");
+        stopAllMotor();
+      }
+
+      //Manual Commands
+      else if(rpiManual && rpiManualDrive != manualForwardCur){
+        commandManualForward(rpiManualDrive); //Manual Command, will remain driving until mesage rpiManualDrive=0 is given
+      }else if(rpiManual && rpiManualTurn != manualTurnCur){
+        commandManualTurn(rpiManualTurn);     //Manual Command, will remain turning until mesage rpiManualTurn=0 is given 
+      }
+      
+      //If we are outside methods we no longer need to cancel current command
+      ardCancel = false;
     }
-    
+    //Delay so we don't overload any serial buffers
+    simpleDelay();
   }
-  else{
+
+  else if (mode == testing){
+//    nh.spinOnce();
     //for testing
     printArticulation();
-//    int rA = 768; //6, 10, 11
-//    int fA = 256;
-//        
-//    int rB = 256; //7, 8, 9
-//    int fB = 768;
+//    commandPackIn(true);
+    //setAllArticulation(stateForward);
 
-//    setAllArticulation(stateStorage); //stateTurning    stateStorage    stateForward
+    setAllArticulation(stateStorage); //stateTurning    stateStorage    stateForward
 //    setAllArticulation(stateTurning);
 //    setAllArticulation(stateForward);
-//    comandDriveForward(10000);
-    //testArticulation(stateForward);
+
+//    commandPackIn(true);
+//    commandTurnRover(10000);
+    
+//    commandDriveForward(-100);
 //    testArticulation(stateForward);
+    testArticulation(stateStorage);
 
 
 //    runMotor(8, FORWARD, 30); //BACKWARD(CC)   FORWARD(CW) 
-//    runMotor(10, FORWARD, 40);
-//    delay(1000);
+//    runMotor(8, FORWARD, 50);
+//    delay(1000); //1000 is a small turn
 //    stopAllMotor();
-//    delay(3000);
-//    printArticulation();
-//    runMotor(8, BACKWARD, 30);
 
-    //setOneArticulation(8, )
+    /*
+     * int stateStorage[6] =   {768, 256, 256, 256, 768, 768};  //orientation of wheels for the storage/collapsed position, (the position our robot will start RMC at)
+     * int stateForward[6] =   {256, 768, 768, 768, 256, 256};  //orientation of wheels needed to drive straight/forward
+     * int stateTurning[6] =   {384, 768, 640, 640, 256, 384};  //orientation of wheels needed to turn the robot
+     */
 
-    //setAllArticulation(stateStorage);
-
-//    int stateStorage[6] =   {768, 256, 256, 256, 768, 768};  //orientation of wheels for the storage/collapsed position, (the position our robot will start RMC at)
-//int stateForward[6] =   {256, 768, 768, 768, 256, 256};  //orientation of wheels needed to drive straight/forward
-//int stateTurning[6] =   {384, 768, 640, 640, 256, 384};  //orientation of wheels needed to turn the robot
-
-
-//    int fFR = 410;
-//    int rFR = 768;
-    //setOneArticulation(6, fA);
-    
-    //Test Code
-    //driveForward(2000);     //1,000 is one rotation, 2,000 is two (approximation: varies by driveSpeed)
-    //driveForward(2000);
-//    setTurnSpeed(15);
-    //setAllArticulation(stateForward);
-    //int A = sensorValue -200; //-CW +CCW
-    //int B = 300; //-CW +CCW
-    //int BList[6] = {B,B,B, B,B,B};
-    //setTurnSpeed(15);
-    //setAllArticulation(BList);
-    //setTurnSpeed(30);
-    //setAllArticulation(stateForward);
-    //stopAllMotor();
-    
-    
-
-//    for(int i = 9; i < 12; i++){  //For Left
-//    for(int i = 6; i < 9; i++){   //For Right
-//      printArticulation();
-//      runMotor(i, FORWARD, 30);
-//      delay(1500);
-//      printArticulation();
-//      runMotor(i, BACKWARD, 30);
-//      delay(1500);
-//      stopMotor(i);
-//      delay(300);
-//    }
     /*
      * List of "States" the 6 wheels can be facing, 1024 is 360*, 0 is 0* 
-     * FORWARDS = CounterClock
+     * FORWARDS = ClockWise
      * FR(A3-133), MR(A4-132), BR(A5-131), FL(A0-128), ML(A1-129), BL(A2-130)
      */
     
-    //int start = analogRead(A3);
-    //Serial.println("here" + analogRead(A3));
-    //String testArticulation = "FR: %d, MR: %d, BR: %d,   FL: %d, ML: %d, BL: %d", 1,2,3,4,5,6;//analogRead(A3), analogRead(A4), analogRead(A5),  analogRead(A0), analogRead(A1), analogRead(A2);
-    //Serial.println("FR: %d, MR: %d, BR: %d,   FL: %d, ML: %d, BL: %d", analogRead(A3), analogRead(A4), analogRead(A5),  analogRead(A0), analogRead(A1), analogRead(A2));
-
-//    setOneArticulation(11, rest -512);
-//    delay(1500);
-//    setOneArticulation(11, rest);
-
-    //setAllArticulation(stateForward);
-
-    
-    //delay(1500);
-    //setOneArticulation(9, fB);
-    //driveForward(3000);
-    
-    //runMotor(9, FORWARD, 30);
-    //setOneArticulation(9, 340);
-    //setOneArticulation(2+6, 400);
-
-    //runAllArticulation(FORWARD, turnSpeed);
-
-    //setAllArticulation(stateStorage);
-
-    
-//    runMotor(3+6, BACKWARD, 40); //==============================================================================================================
-    delay(1500);
-//    stopMotor(3+6);
-    
     printArticulation();
-    Serial.println("test done");
-    eternalSleep();
+    msg2user("test done\n");
+    eternalSleep(); //stopAllMotor and sleep forever
+  }//end test code
+
+  else /*if (mode == justStop)*/{
+    eternalSleep(); //stopAllMotor and sleep forever
   }
-  
-  //Delay so we don't overload any serial buffers
-  simpleDelay();
+}
+
+//====================================================================================================================================================================
+// Print Methods, these methods are used for testing and gathering data, (Not called by R-Pi)
+//====================================================================================================================================================================
+
+/**
+ * Prints the commands R-Pi sent to the Arduino
+ */
+void printCommandLines(){
+  String commandsCur = "Commands: drive: " + (String)(rpiDriveDistance) +
+                      " Turn: " + (String)(rpiTurnDegrees) +
+                      " Dig: " + (String)(rpiDigger) +
+                      " Dump: " + (String)(rpiDumper) +
+                      " PackIn: " + (String)(rpiPackIn) +
+                      " EStop: " + (String)(rpiEStop) +
+                      " Pause: " + (String)(rpiPause) + "\n";
+  msg2user(commandsCur);
 }
 
 /**
- * Prints the current Articulation reads for all 6 articulation sensors
+ * Prints the current Articulation reads from all 6 articulation sensors
  */
 void printArticulation(){
   String articulation = "Relative to wheelTrueZero:   FR: "+
@@ -328,25 +352,25 @@ void printArticulation(){
                 ",\t BR: "+(String)(analogRead(A5)-wheelTrueZero[2])+
             ",\t\t\t FL: "+(String)(analogRead(A0)-wheelTrueZero[3])+
                 ",\t ML: "+(String)(analogRead(A1)-wheelTrueZero[4])+
-                ",\t BL: "+(String)(analogRead(A2)-wheelTrueZero[5]);
+                ",\t BL: "+(String)(analogRead(A2)-wheelTrueZero[5])+ "\n";
 
-  Serial.println(articulation);
+  //sends the final msg
+  msg2user(articulation);
 }
+
 /**
  * prints the current articulation and prints how far it is from a specific stateCur[6]
  */
 void testArticulation(int stateCur[]){
-  //printArticulation();
-  
   //prints the basic data the sensors are giving
-  String rawDis= "Raw Data given by sensors:   FR: "+
-                          (String)(analogRead(A3)+0)+
-               ",\t MR: "+(String)(analogRead(A4)+0)+
-               ",\t BR: "+(String)(analogRead(A5)+0)+
-           ",\t\t\t FL: "+(String)(analogRead(A0)+0)+
-               ",\t ML: "+(String)(analogRead(A1)+0)+
-               ",\t BL: "+(String)(analogRead(A2)+0);
-  Serial.println(rawDis);
+  String rawData= "Raw Data given by sensors:   FR: "+
+                          (String)(analogRead(A3))+
+               ",\t MR: "+(String)(analogRead(A4))+
+               ",\t BR: "+(String)(analogRead(A5))+
+           ",\t\t\t FL: "+(String)(analogRead(A0))+
+               ",\t ML: "+(String)(analogRead(A1))+
+               ",\t BL: "+(String)(analogRead(A2))+ "\n";
+  msg2user(rawData);
 
   //Prints the distances each wheel needs to go (assuming the phisical wheels are pointing in "sateCur[]")
   String dis2Correct = "Dis to correct Articulation: FR: "+
@@ -355,39 +379,104 @@ void testArticulation(int stateCur[]){
                ",\t BR:   "+(String)(analogRead(A5)-wheelTrueZero[2]-stateCur[2])+
            ",\t\t\t FL:   "+(String)(analogRead(A0)-wheelTrueZero[3]-stateCur[3])+
                ",\t ML:   "+(String)(analogRead(A1)-wheelTrueZero[4]-stateCur[4])+
-               ",\t BL:   "+(String)(analogRead(A2)-wheelTrueZero[5]-stateCur[5]);
-  Serial.println(dis2Correct);
+               ",\t BL:   "+(String)(analogRead(A2)-wheelTrueZero[5]-stateCur[5])+ "\n";
+  msg2user(dis2Correct);
   
 
-  String newArt = "\n[New] wheelTrueZero = {"+
+  String newTrueZero = "\n[New] const int wheelTrueZero[6] = {"+
                   (String)(analogRead(A3)-stateCur[0])+", "+
                   (String)(analogRead(A4)-stateCur[1])+", "+
                   (String)(analogRead(A5)-stateCur[2])+", "+
                   (String)(analogRead(A0)-stateCur[3])+", "+
                   (String)(analogRead(A1)-stateCur[4])+", "+
-                  (String)(analogRead(A2)-stateCur[5])+"};\n";
-  Serial.println(newArt);
+                  (String)(analogRead(A2)-stateCur[5])+"};\n\n";
+  msg2user(newTrueZero);
+}
+
+/**
+ * Tests the system (specificaly the articulation sensors) to see if the rover is giving correct readings for a known state
+ * known states: stateTurning, stateStorage, stateForward 
+ *    ^^^ we test all these states to see if our readings match any of them, else prints error
+ */
+void systemCheck(){
+  msg2user("===Starting System Check====\nChecking Articulation Sensors:\n");
+  //prints the basic data the sensors are giving
+  String rawData= "Raw Data given by sensors:   FR: "+
+                          (String)(analogRead(A3))+
+               ",\t MR: "+(String)(analogRead(A4))+
+               ",\t BR: "+(String)(analogRead(A5))+
+           ",\t\t\t FL: "+(String)(analogRead(A0))+
+               ",\t ML: "+(String)(analogRead(A1))+
+               ",\t BL: "+(String)(analogRead(A2))+ "\n";
+  msg2user(rawData);
+
+  int testTurn = testStateValid(stateTurning);
+  int testStore= testStateValid(stateStorage);
+  int testForwd= testStateValid(stateForward);
+
+  msg2user("[stateTurning] margin of error: "+ (String)testTurn +"\n");
+  msg2user("[stateStorage] margin of error: "+ (String)testStore +"\n");
+  msg2user("[stateForward] margin of error: "+ (String)testForwd +"\n");
+
+  //finds if any state is within a known State
+  if(testTurn < 100){
+    msg2user("Articulation Test Passed for: [stateTurning]\n\n");
+  }
+  else if (testStore < 100){
+    msg2user("Articulation Test Passed for: [stateStorage]\n\n");
+  }
+  else if (testForwd < 100){
+    msg2user("Articulation Test Passed for: [stateForward]\n\n");
+  }
+  else{
+    msg2user("ERROR: Articulation Test <FAILED> no known articulation sensed\n\tOne or more wheels giving unexpected articulation readings\n\n");
+  }
+}
+
+/**
+ * Tests the validity of a Test State compaired what our Current Articulation sensors are reading
+ * 
+ * @return: the biggest dffrence between our testState and what we are reading
+ */
+int testStateValid(int testState[6]){
+  int biggestOffSet = -1;
+  
+  //checks all wheel's sensors
+  for(int i = 0; i < 6; i++){
+    int curOffSet = abs(articulationRead(i)-wheelTrueZero[i]-testState[i]);
+    //if our current wheel is the farthest from our testState, save it
+    if(curOffSet > biggestOffSet){
+      biggestOffSet = curOffSet;
+    }
+  }
+
+  return biggestOffSet;
 }
 
 //====================================================================================================================================================================
-// comand Methods, these are the only ones the R-pi is expected to call
+// command Methods, these are the only ones the R-Pi is expected to call
 //====================================================================================================================================================================
+
 /**
  * Sets the Rover's wheels to point straight and drives FORWARD
  * 
  * @param distance: Distance we want to drive FORWARD (enter negitive number for backwards)
  */
-void comandDriveForward(int distance){
+void commandDriveForward(int distance){
   //if our value is zero our R-Pi didn't actualy want to call this method, also we want to turn the rover first
-  if(distance == 0 || pause){return;}
-  rpiDriveDistance = 0; //TODO-------------------------------------------------------------------------
-  
+  if(distance == 0 || rpiPause){return;} 
+  ardSerialID = rpiSerialID;  //Update new SerialID
   ardReady = false;
+  
+  msg2user("C#" + (String)ardSerialID + ", Driving Rover: "+ (String)distance +"\n");
+  
   setAllArticulation(stateForward);
-  driveForward(distance);
+  setAllArticulation(stateForward); //double check to correct any jittering or wigling 
+  chainDriveForward(distance);
 
-  //Tells R-Pi we are ready and resets rpiDriveDistance
+  //Tells R-Pi we are ready
   ardReady = true;
+  msg2user("\tDone\n");
 }
 
 /**
@@ -395,17 +484,21 @@ void comandDriveForward(int distance){
  * 
  * @param degrees: Degrees we want to turn Rover (enter negitive number for Left)
  */
-void comandTurnRover(int degrees){
+void commandTurnRover(int degrees){
   //if our value is zero our R-Pi didn't actualy want to call this method
-  if(degrees == 0 || pause){return;}
-  rpiTurnDegrees = 0; //TODO-------------------------------------------------------------------------
-  
+  if(degrees == 0 || rpiPause){return;}
+  ardSerialID = rpiSerialID;  //Update new SerialID
   ardReady = false;
+  
+  msg2user("C#" + (String)ardSerialID + ", Turning Rover: "+ (String)degrees +"\n");
+  
   setAllArticulation(stateTurning);
+  setAllArticulation(stateTurning);//double check to correct any jittering or wigling
   turnRover(degrees);
 
-  //Tells R-Pi we are ready and resets rpiTurnDegrees
+  //Tells R-Pi we are ready
   ardReady = true;
+  msg2user("\tDone\n");
 }
 
 /**
@@ -413,13 +506,29 @@ void comandTurnRover(int degrees){
  * 
  * @param startDigger: true if we want to dig now
  */
-void comandDigger(boolean startDigger){
+void commandDigger(boolean startDigger){
   //If digger in is false we didn't actualy want to call this method
-  if(startDigger == false || pause){ return;}
+  if(startDigger == false || rpiPause){ return;}
+  ardReady = false;
+  ardSerialID = rpiSerialID;  //Update new SerialID
+  
+  msg2user("C#" + (String)ardSerialID + ", Digging\n");
+
+  //make sure wheels will not block the digger
+  setAllArticulation(stateForward);
+  setAllArticulation(stateForward);
   //move wench down, run digger, move wench back up
-  driveOneForward(13, wenchDistance, wenchSpeed); //move wench
-  driveOneForward(12, diggerTime, diggerSpeed);   //run dumper
-  driveOneForward(13, -wenchDistance, wenchSpeed);//move wench back
+  driveOneForward(13, wenchDistance, wenchSpeed); //move wench down into dirt
+  
+  //drive forward while we dig down
+  activeDriveForward(FORWARD, driveSpeed/3);
+  driveOneForward(12, diggerTime, diggerSpeed);   //run digger
+  stopAllMotor(); //stops all digging and driving motors
+  
+  driveOneForward(13, -wenchDistance, wenchSpeed);//move wench back up
+  
+  ardReady = true;
+  msg2user("\tDone Digging\n");
 }
 
 /**
@@ -427,11 +536,19 @@ void comandDigger(boolean startDigger){
  * 
  * @param startDumper: true if we want to dump right now
  */
-void comandDumper(boolean startDumper){
+void commandDumper(boolean startDumper){
   //If dumper in is false we didn't actualy want to call this method
-  if(startDumper == false || pause){ return;}
+  if(startDumper == false || rpiPause){ return;}
+  ardReady = false;
+  ardSerialID = rpiSerialID;  //Update new SerialID
+  
+  msg2user("C#" + (String)ardSerialID + ", Dumping\n");
+
   //run the dumper for dumperTime
   driveOneForward(14, dumperTime, dumperSpeed); //run dumper
+  
+  ardReady = true;
+  msg2user("\tDone Dumping\n");
 }
 
 /**
@@ -440,67 +557,210 @@ void comandDumper(boolean startDumper){
  * @param packIn: true, if we actualy want to pack our wheels in
  *                false, if we don't actualy want to pack wheels in
  */
-void comandPackIn(boolean packIn){ 
+void commandPackIn(boolean packIn){ 
   //If pack in is false we didn't actualy want to call this method
-  if(packIn == false || pause){ return;}
-  rpiDriveDistance = 0;//TODO-------------------------------------------------------------------------
-  rpiTurnDegrees = 0;  //TODO-------------------------------------------------------------------------
-  
+  if(packIn == false || rpiPause){ return;}
   ardReady = false;
+  ardSerialID = rpiSerialID;  //Update new SerialID
+  
+  msg2user("C#" + (String)ardSerialID + ", Packing In\n");
+  
   setAllArticulation(stateStorage);
+  setAllArticulation(stateStorage);//double check to correct any jittering or wigling
+  
   ardReady = true;
+  msg2user("\tDone\n");
 }
 
 /**
- * If we need to Pause use this comand, Stops motors, banns new comands, and causes delays to last forever, untill unpaused
+ * If we need to Pause use this command, Stops motors, banns new commands, and causes delays to last forever, untill un-paused
  * 
  * @param newPause: the new Pause, true for stop, false for resume
  *     => true:    Stop all motors and ban motors from turning
- *     => false:   Allow motors to move again (unpause)
+ *     => false:   Allow motors to move again (unPaused)
  */
-void comandSetPause(boolean tempPause){
-  if(tempPause == true && pause){
-    //Do nothing R-Pi requested Pause and we are already Pauseed
-    return;
-  }
-  else if(tempPause == true && pause == false){
+void commandPause(boolean newPause){
+  if(newPause){
+    //if we need to pause, stop all, wait for unpause
+    ardSerialID = rpiSerialID;  //Update new SerialID
+    
+    msg2user("C#" + (String)ardSerialID + ", Paused, stopping all motors\n");
+    
     //we need to Pause: stop motors from spining
     stopAllMotor();
-    //Bans motors from moving
-    pause = true;
-
-    //simpleDelay();
-    //checkForPause();
   }
   else{
-    //Allows motors to move again
-    pause = false;
+    //we don't want to pause
+    return;
   }
+
+  //while we are paused, stay in while loop
+  while(rpiPause){
+    //while arduino is "paused", check for rpiPaused to be changed
+    delay(5);
+    nh.spinOnce();
+    
+    if(rpiEStop){
+      ardSerialID = rpiSerialID;
+      //If we need to emergency stop, EStop
+      commandEStop(rpiEStop);
+    }
+
+    if(rpiCancel == true){
+      //let the whole program know we wish to cancel
+      msg2user("/t <<<Command Canceled>>> \n");
+      stopAllMotor();
+      ardCancel = true;
+    }
+    
+    //if rpiPause changes, re-allow motors to move
+    if(rpiPause == false){
+      ardSerialID = rpiSerialID;
+      msg2user("C#" + (String)ardSerialID + ", Pause Ended\n");
+      return;
+    }
+  } 
 }
 
 /**
  * Irreversably stop all motors and sleep forever
  */
-void comandEStop(boolean tempEStop){
+void commandEStop(boolean tempEStop){
   if(tempEStop){
+    ardSerialID = rpiSerialID;
+    msg2user("C#" + (String)ardSerialID + ", EStop\n");
+    ardReady = false;
     //Stops all Motors and sleeps forever
     eternalSleep();
   }
 }
 
+
 //====================================================================================================================================================================
-// Drive Methods, used to allow Drive comands drive Rover correct distances
+// Manual command Methods, these are special commands only the User sitting in a chair controlling the R-Pi is expected to call
 //====================================================================================================================================================================
+
+/**
+ * Sets the rover's wheels facing straight and dirves forward untill the commandManualForward gets a Zero passed into it
+ * Used for a manual user keyboard, the user would be pressing(and holding) a button to make the value 1 (or -1), 
+ *      and then when the user releases the button => rover stops driving
+ * 
+ * @param direction: the direction we want the rover to drive
+ *      1: Forward
+ *      0: Stop(if driving)
+ *     -1: Backward
+ */
+void commandManualForward(int direction){
+  //if this is the same command as before, do nothing
+  if(direction == manualForwardCur){return;}
+  ardSerialID = rpiSerialID;
+  ardReady = false;
+  
+  //if we want to go forward and are not already going forward
+  if(direction == 1){
+    msg2user("C#" + (String)ardSerialID + ", MANUAL: Drive Forward\n");
+    //get the Rover's wheels facing straight
+    setAllArticulation(stateForward);
+    setAllArticulation(stateForward);
+    manualForwardCur = 1;
+    //drive forward
+    activeDriveForward(FORWARD, driveSpeed);
+  } 
+  else if(direction == -1){
+    msg2user("C#" + (String)ardSerialID + ", MANUAL: Drive Backward\n");
+    //get the Rover's wheels facing straight
+    setAllArticulation(stateForward);
+    setAllArticulation(stateForward);
+    manualForwardCur = -1;
+    //drive backward
+    activeDriveForward(BACKWARD, driveSpeed);
+  }
+  else if(direction == 0){
+    manualForwardCur = 0;
+    //we want to stop the motors now that we aren't holding the forward button
+    stopAllMotor();
+    
+    //Tells R-Pi we are ready
+    ardReady = true;
+    msg2user("\t=>Drive Stop\n");
+  }
+}
+
+/**
+ * Sets the rover's wheels to turn and turns untill the commandManualTurn gets a Zero passed into it
+ * Used for a manual user keyboard, the user would be pressing(and holding) a button to make the value 1 (or -1), 
+ *      and then when the user releases the button => rover stops turning
+ * 
+ * @param direction: the direction we want the rover to turn
+ *      1: ClockWise (Left)
+ *      0: Stop(if turning)
+ *     -1: Counter-ClockWise (Right)
+ */
+void commandManualTurn(int direction){
+  //if this is the same command as before, do nothing
+  if(direction == manualTurnCur){return;}
+  ardSerialID = rpiSerialID;
+  ardReady = false;
+
+  //if we want to turn ClockWise and are not already turning ClockWise
+  if(direction == 1){
+    msg2user("C#" + (String)ardSerialID + ", MANUAL: Turn Left\n");
+    //get the Rover's wheels into turning position
+    setAllArticulation(stateTurning);
+    manualTurnCur = 1;
+    //turn ClockWise
+    activeTurn(FORWARD, turnSpeed);
+  } 
+  else if(direction == -1){
+    msg2user("C#" + (String)ardSerialID + ", MANUAL: Turn Right\n");
+    //get the Rover's wheels into turning position
+    setAllArticulation(stateTurning);
+    manualTurnCur = -1;
+    //turn Counter Clock
+    activeTurn(BACKWARD, turnSpeed);
+  }
+  else if(direction == 0){
+    manualTurnCur = 0; 
+    //we want to stop the motors now that we aren't holding the forward button
+    stopAllMotor();
+    //Tells R-Pi we are ready
+    ardReady = true;
+    msg2user("/t=>Turn Stop\n");
+  }
+}
+
+//====================================================================================================================================================================
+// Drive Methods, used to allow Drive commands drive Rover correct distances
+//====================================================================================================================================================================
+/**
+ * Drive forward X distance, (does not reposition wheels), 
+ * and if a new drive forward command is given progran will start new drive forward command without akwardly stoping between them
+ * #Support method for commandDriveForward
+ * 
+ * @param distance: target distance we want to rover to travel
+ */
+void chainDriveForward(int distance){
+  if(ardCancel == true){return;}
+  //driveForward at least once
+  driveForward(distance);
+  while((ardSerialID != rpiSerialID) && (rpiDriveDistance != 0)){
+    ardSerialID = rpiSerialID;
+    msg2user("/nC#" + (String)ardSerialID + ", DriveForward Override to: ["+ (String)rpiDriveDistance + "]/n");
+    driveForward(rpiDriveDistance);
+  }
+  stopAllDrive(); //set all drive motor's speed to zero (probably reduntant, but better safe then sorry)
+}
 
 /**
  * Drive forward X distance, (does not reposition wheels)
  * if distance is negative => go backwards
- * #Support method for comandDriveForward
+ * #Support method for chainDriveForward
  * 
  * @param distance: target distance we want to rover to travel
  */
 void driveForward(int distance){
-  float distanceTraveled = 0;
+  if(ardCancel == true){return;}
+  //float distanceTraveled = 0;
   int direction = FORWARD;
   //if distance is negative => go backwards
   if(distance < 0){
@@ -508,15 +768,34 @@ void driveForward(int distance){
   }
   activeDriveForward(direction, driveSpeed);
 
-  //if we are not within the driveError of the distance, we keep driving
-  while(abs(distance) > distanceTraveled /*driveError*/){
+  //long startTime = millis();
+  long endTime = millis() + (abs(distance)/driveSpeed)*1000.0;
+
+  //wait till target end time, and constantly check for interupting commands
+  while(millis() < endTime){
     //delay so we don't run the while loop into an overflow
     simpleDelay();
+    
     //if we need to pause, pause
-    checkForPause();
+    long pausedTime = checkForInterupt();
+    if(ardCancel == true){return;}
+    
+    //if we have exited pause, resume motors update clock
+    if(pausedTime > 0){
+      //resume motor movement (paused stoped it)
+      activeDriveForward(direction, driveSpeed);
+      //add time lost in pause to new target endTime
+      endTime = endTime + pausedTime;
+    }
 
+    //Sees if Rpi wants to contine with another drive command (checkForInterupt already updated rpi varables)
+    if((ardSerialID != rpiSerialID) && (rpiDriveDistance != 0)){ 
+      //If we have a new drive forward command, drop current and start anew with new drive distance
+      return;
+    }
+    
     //Keeps track of how far we have traveled, based off time
-    distanceTraveled = distanceTraveled + driveSpeed/10.0;
+    //distanceTraveled = distanceTraveled + driveSpeed/10.0;
   }
 
   stopAllDrive(); //set all drive motor's speed to zero
@@ -524,12 +803,14 @@ void driveForward(int distance){
 
 /**
  * actualy runs all 6 Drive Motors, 3 right wheels one way, 3 left wheels the other to go forward
- * #Support method for driveFORWARD
+ * #Support method for driveForward
  * 
  * @param direction:  FORWARD(clockwise) or BACKWARD(counter-clock)
  * @param speed:      The speed you want all 6 drive motors to turn
  */
 void activeDriveForward(int direction, int speed){
+  if(ardCancel == true){return;}
+  msg2user("act-Drive, ");
   //set right motors to forward
   for(int i = 0; i < 3; i++){
     runMotor(i, direction, speed);
@@ -545,6 +826,7 @@ void activeDriveForward(int direction, int speed){
  * #Support method for driveFORWARD
  */
 void stopAllDrive(){
+  msg2user("stoped.\n");
   activeDriveForward(0, 0);
 }
 
@@ -555,29 +837,38 @@ void stopAllDrive(){
 /**
  * Turn Rover Right X degrees
  * if degrees is negative => go backwards
- * #Support Method for comandTurnRover
+ * #Support Method for commandTurnRover
  * 
  * @param:  degrees, target degrees we want to rover to turn
  */
 void turnRover(int degrees){
-  float distanceTraveled = 0;
+  if(ardCancel == true){return;}
+  //float distanceTraveled = 0;
   int direction = FORWARD;
   //if distance is negative => go backwards(left)
   if(degrees < 0){
     direction = BACKWARD;
   }
-  activeTurn(direction, turnDiveSpeed);
+  activeTurn(direction, turnDriveSpeed);
   
-  //if we are not within the driveError of the distance, we keep driving
-  while((abs(degrees) - distanceTraveled) > 0/*driveError*/){
+  long endTime = millis() + (abs(degrees)/turnDriveSpeed)*1000.0;
+
+  //wait till target end time, and constantly check for interupting commands
+  while(millis() < endTime){
     //delay so we don't run the while loop into an overflow
     simpleDelay();
+    
     //if we need to pause, pause
-    checkForPause();
+    long pausedTime = checkForInterupt();
+    if(ardCancel == true){return;}
     
-    //Keeps track of how far we have traveled, based off time 
-    distanceTraveled = distanceTraveled + turnDiveSpeed/10.0;
-    
+    //we have exited pause, resume motors update clock
+    if(pausedTime > 0){
+      //resume motor movement (paused stoped it)
+      activeTurn(direction, turnDriveSpeed);
+      //add time lost in pause to new target endTime
+      endTime = endTime + pausedTime;
+    }
   }
   
   stopAllDrive(); //set all drive motor's speed to zero
@@ -592,6 +883,8 @@ void turnRover(int degrees){
  * @param speed:      The speed you want all 6 drive motors to turn
  */
 void activeTurn(int direction, int speed){
+  if(ardCancel == true){return;}
+  msg2user("act-Turn, ");
   runMotor(0, direction, speed);
   runMotor(1, direction, speed*innerTurnSpeed);
   runMotor(2, direction, speed);
@@ -607,29 +900,43 @@ void activeTurn(int direction, int speed){
 
 /**
  * drives one wheel forward to a given distance (Safe to run)
- * #Support Method for comandDigger and comandDumper
+ * #Support Method for commandDigger and commandDumper
  * 
  * @param ID:       the id of the drive wheel we want to move
  * @param distance: the distance we want it to travel
  */
 void driveOneForward(int ID, int distance, int speed){
-  float distanceTraveled = 0;
+  if(ardCancel == true){return;}
+  //float distanceTraveled = 0;
   int direction = FORWARD;
   //if distance is negative => go backwards
   if(distance < 0){
     direction = BACKWARD;
   }
+  msg2user("\turn motor: " + (String)ID + " distance:" + (String)distance + ", ");
   runMotor(ID, direction, speed);
   
-  //if we are not within the driveError of the distance, we keep driving
-  while((abs(distance) - distanceTraveled) > 0 /*driveError*/){
+  long endTime = millis() + (abs(distance)/speed)*1000.0;
+
+  //wait till target end time, and constantly check for interupting commands
+  while(millis() < endTime){
     //delay so we don't run the while loop into an overflow
     simpleDelay();
+    
     //if we need to pause, pause
-    checkForPause();
-    distanceTraveled = distanceTraveled + speed/10.0; //Temp place-holder
+    long pausedTime = checkForInterupt();
+    if(ardCancel == true){return;}
+    
+    //we have exited pause, resume motors update clock
+    if(pausedTime > 0){
+      //resume motor movement (paused stoped it)
+      runMotor(ID, direction, speed);
+      //add time lost in pause to new target endTime
+      endTime = endTime + pausedTime;
+    }
   }
-  stopMotor(ID); //set all drive motor's speed to zero
+  stopMotor(ID); //set this motor's speed to zero
+  msg2user("stoped.\n");
 }
 
 //====================================================================================================================================================================
@@ -643,8 +950,22 @@ void driveOneForward(int ID, int distance, int speed){
  * @param degrees[6]: the new directions all 6 articulation motors will be set to point at
  */
 void setAllArticulation(int degrees[6]){
+  if(ardCancel == true){return;}
   boolean done = false;
   boolean isFinished = false;
+  
+  //Stops all motors, setAllArticulation expects the rover to be stationary
+  stopAllMotor();
+  
+  if(degrees == stateStorage){
+    msg2user("\tarticulating->stateStorage, ");
+  }else if(degrees == stateForward){
+    msg2user("\tarticulating->stateForward, ");
+  }else if(degrees == stateTurning){
+    msg2user("\tarticulating->stateTurning, ");
+  }else{
+    msg2user("\tarticulating->customState, ");
+  }
   
   //update "newDegrees" array with adjusted values
   adjustForWheelOffset(degrees);
@@ -655,6 +976,10 @@ void setAllArticulation(int degrees[6]){
   while(done == false){
     //if we encounter no unfinished turning wheels we remain "done"
     done = true;
+
+    //If we need to stop, pause, or eStop do it
+    checkForInterupt();
+    if(ardCancel == true){return;}
     
     //go through all 6 articulation motors
     for(int i = 6; i<12; i++){
@@ -672,6 +997,7 @@ void setAllArticulation(int degrees[6]){
       }
     }
   }
+  msg2user("stoped.\n");
 }
 
 /**
@@ -687,28 +1013,28 @@ void setAllArticulation(int degrees[6]){
  * @param degrees:the target angle we want the articulation wheel to point at
  */
 boolean setMotorArticulation(int ID, int degrees){
+  if(ardCancel == true){return true;}
   if(wheelID[ID] == 0){return true;}
   
   //update articulation
   int articulation = articulationRead(ID-6);
-  Serial.println(articulation - wheelTrueZero[ID-6]);
   
   //if the motor is already within the turnError stop
   if(abs(articulation/*(ID-6)*/  - degrees) < turnError){
     stopMotor(ID);
-    stopMotor(ID-6);//------------------------------------------------------------------------------
+    stopMotor(ID-6);
     return true;
   }
   //if the motor is too far, go back
   else if(articulation/*(ID-6)*/ > degrees){
     runMotor(ID, FORWARD, turnSpeed);
-    runMotor(ID-6, BACKWARD, (int)(turnSpeed*artHelperSpeed));//-----------------------------------------------------
+    runMotor(ID-6, BACKWARD, (int)(turnSpeed*artHelperSpeed));
     return false;
   }
   //if the motor isn't far enough, go forward
   else{
     runMotor(ID, BACKWARD, turnSpeed);
-    runMotor(ID-6, FORWARD, (int)(turnSpeed*artHelperSpeed));//------------------------------------------------------
+    runMotor(ID-6, FORWARD, (int)(turnSpeed*artHelperSpeed));
     return false;
   }
 }
@@ -723,19 +1049,21 @@ boolean setMotorArticulation(int ID, int degrees){
  */
 int articulationRead(int articulationWheelID){
   switch(articulationWheelID){
-    case 0: return analogRead(A3);  //FR wheel
+    case 0: case 6: return analogRead(A3);  //FR wheel
       break;
-    case 1: return analogRead(A4);  //MR wheel
+    case 1: case 7: return analogRead(A4);  //MR wheel
       break;
-    case 2: return analogRead(A5);  //BR wheel
+    case 2: case 8: return analogRead(A5);  //BR wheel
       break;
-    case 3: return analogRead(A0);  //FL wheel
+    case 3: case 9: return analogRead(A0);  //FL wheel
       break;
-    case 4: return analogRead(A1);  //ML wheel
+    case 4: case 10: return analogRead(A1);  //ML wheel
       break;
-    case 5: return analogRead(A2);  //BL wheel
+    case 5: case 11: return analogRead(A2);  //BL wheel
       break;
-    default: return 0;
+    default: 
+      msg2user("\nError: Arduino called articulationRead for invalid ID: "+ (String)articulationWheelID + "\n");
+      return 0;
       break;
   }
 }
@@ -749,6 +1077,7 @@ int articulationRead(int articulationWheelID){
  * @param: degrees[6]:  what direction the user wants the wheels to point, pretending the wheels "zero orientation" is at the folded in position
  */
 void adjustForWheelOffset(int degrees[6]){
+  if(ardCancel == true){return;}
   //go through all 6 articulation motors
   for(int ID = 6; ID<12; ID++){
     newDegrees[ID-6] = wheelTrueZero[ID-6] + degrees[ID-6];
@@ -756,21 +1085,22 @@ void adjustForWheelOffset(int degrees[6]){
 }
 
 //====================================================================================================================================================================
-// Misc Methods, used to allow Other Methods in use, [runMotor, keepGoing, stopMotor(s), simpleDelay, checkForPause, ext.]
+// Misc Methods, used to allow Other Methods in use, [runMotor, keepGoing, stopMotor(s), simpleDelay, checkForInterupt, ext.]
 //====================================================================================================================================================================
 
 /**
  * runs a motor given motorID, direction, and speed
  * 
  * @param ID: the wheelID[] position
- * @param comandInt:  the direction we want to rotate the wheel
+ * @param commandInt:  the direction we want to rotate the wheel
  *              0: REVERSE(counter-clock), 1: FORWARD(clockwise)
  * @param tempSpeed: the speed you want it to rotate
  *              0: Stopped, else Go.
  */
-void runMotor(int ID, int comandInt, int tempSpeed){ //=====================================================================================================
-  //If we are Pauseed, do not allow any Motor to run, only stop motor
-  if(pause && tempSpeed != 0){return;}
+void runMotor(int ID, int commandInt, int tempSpeed){ //=====================================================================================================
+  //If we are Paused or canceled, do not allow any Motor to run, only stop motor
+  if(ardCancel == true && tempSpeed != 0){return;}
+  //if(ardPause && tempSpeed != 0){return;}
 
   //int speed = tempSpeed;
 //  if(wheelPinType[ID] == 2){
@@ -778,33 +1108,33 @@ void runMotor(int ID, int comandInt, int tempSpeed){ //=========================
 //  }
   
   unsigned char address = wheelID[ID];
-  unsigned char comand;
+  unsigned char command;
   //reverse the wheels direction if need be
   if(wheelPinType[ID] == 1){
     //Move Drive Motor
-    if((wheelDirection[ID] == true && comandInt == FORWARD) || 
-       (wheelDirection[ID] == false && comandInt == BACKWARD)){
+    if((wheelDirection[ID] == true && commandInt == FORWARD) || 
+       (wheelDirection[ID] == false && commandInt == BACKWARD)){
       //Drive FORWARD (Clockwise)
-      comand = (char)FORWARD_DRIVE;
+      command = (char)FORWARD_DRIVE;
     }
-    else if ((wheelDirection[ID] == true && comandInt == BACKWARD) ||
-             (wheelDirection[ID] == false && comandInt == FORWARD)){
+    else if ((wheelDirection[ID] == true && commandInt == BACKWARD) ||
+             (wheelDirection[ID] == false && commandInt == FORWARD)){
       //Drive Backward (Counter-Clockwise)
-      comand = (char)BACKWARD_DRIVE;
+      command = (char)BACKWARD_DRIVE;
     }
     
   }
   else if(wheelPinType[ID] == 2){
     //Move Articulation Motor
-    if((wheelDirection[ID] == true && comandInt == FORWARD) || 
-       (wheelDirection[ID] == false && comandInt == BACKWARD)){
+    if((wheelDirection[ID] == true && commandInt == FORWARD) || 
+       (wheelDirection[ID] == false && commandInt == BACKWARD)){
       //Art. FORWARD (Clockwise)
-      comand = (char)FORWARD_ART;
+      command = (char)FORWARD_ART;
     }
-    else if ((wheelDirection[ID] == true && comandInt == BACKWARD) || 
-             (wheelDirection[ID] == false && comandInt == FORWARD)){
+    else if ((wheelDirection[ID] == true && commandInt == BACKWARD) || 
+             (wheelDirection[ID] == false && commandInt == FORWARD)){
       //Art. Backward (Counter-Clockwise)
-      comand = (char)BACKWARD_ART;
+      command = (char)BACKWARD_ART;
     }
   }
 
@@ -812,59 +1142,36 @@ void runMotor(int ID, int comandInt, int tempSpeed){ //=========================
   int speed = (int)(tempSpeed*wheelCorectFactor[ID]);
   if(speed > 127){
     speed = 127;
-    String errorMsgSpeed = "Error: Motor #" + (String)(ID) + " has been given a speed greater than allowed, motor was slown down to it's max speed";
-    Serial.println(errorMsgSpeed);
+    msg2user("Error: Motor #" + (String)(ID) + " has been given a speed greater than allowed, motor was slown down to it's max speed\n");
   }
   
   //checksum is an important variable/line of code for moving the motor
-  unsigned char checksum = (address + comand + ((char)speed)) & 0b01111111;
+  unsigned char checksum = (address + command + ((char)speed)) & 0b01111111;
   
   // Write to the correct serial packet.
   if(wheelPinType[ID] == 1 || wheelPinType[ID] == 2){
     //This is the 4 lines of code that ACTUALY moves the motor, do not mess with
     Serial1.write(address);
-    Serial1.write(comand);
+    Serial1.write(command);
     Serial1.write(((char)speed));
     Serial1.write(checksum);
   }
 //  else if(wheelPinType[ID] == 2){  //TODO FIXED????
 //    Serial2.write(address);
-//    Serial2.write(comand);
+//    Serial2.write(command);
 //    Serial2.write(((char)speed));
 //    Serial2.write(checksum);
 //  }
 //  else if(wheelPinType[ID] == 3){
 //    Serial3.write(address);
-//    Serial3.write(comand);
+//    Serial3.write(command);
 //    Serial3.write(((char)speed));
 //    Serial3.write(checksum);
 //  }
   //so we don't overload any serial buffers
   simpleDelay();
-  //if we need to pause, pause
-  //checkForPause(); // <-- May need this -------------------------------------------------------------------
-}
-
-/**
- * Causes no change in motor control until distance = time*speed/timeMod //(Not currently in use but should be)================================================
- * 
- * @param distance: The distance we want to keep moving to
- * @param speed:    The speed at wich we are moving
- * @param timeMod:  The rate at which speed relates to distance
- */
-void keepGoing(int distance, int speed, double timeMod){
-  float distanceTraveled = 0.0;
-  
-  //if we are not within the driveError of the distance, we keep going
-  while((abs(distance) - distanceTraveled) > 0/*driveError*/){
-    //delay so we don't run the while loop into an overflow
-    simpleDelay();
-    //if we need to pause, pause
-    checkForPause();
-
-    //Keeps track of how far we have traveled, based off time
-    distanceTraveled += driveSpeed/timeMod;
-  }
+  //if we need to paused, paused
+  //checkForInterupt(); // <-- May need this -------------------------------------------------------------------
 }
 
 /**
@@ -873,7 +1180,7 @@ void keepGoing(int distance, int speed, double timeMod){
 void stopAllMotor(){
   for(int i = 0; i < numberOfWheels; i++){
     //sets all motor's speed to zero
-    stopMotor(i);
+    runMotor(i, 0, 0);
   }
 }
 
@@ -897,31 +1204,38 @@ void simpleDelay(){
 }
 
 /**
- * Updates pause and causes to delay untill unpaused
+ * updates all the commands that would interupt or system command,(pause, estop, cancel)
  * #Called in while loops
+ * 
+ * return:  Amount of time in Milliseconds we spent paused
  */
-void checkForPause(){
-  //sleep forever if Pause needs to be true
-  updatePause();
-  while(pause){
-    delay(10);
-    updatePause();
-  }
-//  if(rpiCancel){ //---------------------------------------------------------------------------
-//    rpiCancel = false;
-//    return 999999;
-//  }
-//  return 0;
-}
+long checkForInterupt(){
+  nh.spinOnce(); //ROS updates comunication 
 
-/**
- * updates the Pause comand,
- * #Support Method for checkForPause
- */
-void updatePause(){
-  //nh.spinOnce(); //ROS updates comunication //-----------------------------------------------------------------------------------------------
-  comandSetPause(rpiPause);
-  comandEStop(rpiEStop);
+  //if it's a new command, and the command is a cancel, pause, or eStop
+  if((ardSerialID != rpiSerialID) && (rpiPause || rpiCancel || rpiEStop)){
+    //Update SerialID because we are now doing a new command
+    ardSerialID = rpiSerialID;
+
+    if(rpiEStop){
+      commandEStop(rpiEStop);
+    }
+    else if(rpiPause){
+      //if we need to pause return how much time we were paused
+      long startTime = millis();
+      commandPause(rpiPause);
+      return millis() - startTime;
+    }
+    else if(rpiCancel){
+      //let the whole program know we wish to cancel
+      msg2user("/t <<<Command Canceled>>> \n");
+      stopAllMotor();
+      ardCancel = true;
+    }
+  }
+
+  //return 0 if we didn't pause
+  return 0;
 }
 
 /**
@@ -929,81 +1243,158 @@ void updatePause(){
  * Also stops all motors
  */
 void eternalSleep(){
+  msg2user("\nPowering down and disabling all Systems\n***If the user wishes to restart Arduino, the reset button (located on the phisical arduino board) must be pressed***\n");
   stopAllMotor();
+  msg2user("\tArduino Shutdown Sucessfully.\n");
   while(true){
-    delayMicroseconds(15000);
+    delay(15000);
+  }
+}
+
+/**
+ * Adds the new msg to adrProgress and increments ardMsgID (So R-Pi knows this is a unique message)
+ * If we are testing also print to Serial Monitor
+ */
+void msg2user(String printLine){
+  if(mode == testing){
+    //if we are testing print also print line to serial
+    Serial.print(printLine);
+  }
+  else{
+    //adds the new mesage to ardProgress
+    ardProgress = printLine;
+    ardMsgID++;
+    //publishes the message
+    updateMessage();
+    //clears the old String (so it won't accedently print twice)
+    ardProgress = "";
   }
 }
 
 //====================================================================================================================================================================
 //Testing Methods (not used in final code)
 //====================================================================================================================================================================
-
-/**
- * Runs all Articulation Motors (For Testing purposes ONLY)
- * Should not be used in final code (Will rip out Wires)
- * 
- * @param comand:  direction we want to go
- * @param speed:    the speed we want the articulation motors to turn
- */
-void runAllArticulation(boolean comand, int speed){
-  for(int i = 6; i < 12; i++){
-    runMotor(i, comand, speed);
-  }
-}
-
-/**
- * sets one articulation motor to a given degrees (Safe to run)
- * 
- * @param ID:      the id of the articulation wheel we want to change
- * @param degrees: the target degrees we want to turn to
- */
-void setOneArticulation(int ID, int degrees){
-  boolean done = false;
-  int newOneDegree = degrees + wheelTrueZero[ID-6];
-  while(done == false){
-    done = setMotorArticulation(ID, newOneDegree);
-  }
-}
-
-/**
- * runs all Drive Motors, All 6 drive wheels turn (clockwise/counter-clockwise) uniformly
- * 
- * @param direction:  FORWARD(clockwise) or BACKWARD(counter-clock)
- * @param speed:      The speed you want all 6 drive motors to turn
- */
-void runAllDriveUniform(boolean direction, int speed){
-  //set all drive motors to forward
-  for(int i = 0; i < 6; i++){
-    runMotor(i, direction, speed);
-  }
-}
-
-/**
- * Sets the driveSpeed and adjusts the values of driveError (Safe to use)
- * #Called once in "setup"
- * 
- * @param newSpeed: the new speed of driveSpeed
- */
-void setDriveSpeed(int newSpeed){
-  //127 is Max Speed => our motors will not run above this
-  //15  is Min Speed => any less and motors will not move
-  driveSpeed = newSpeed;      //Speed of driveMotors going forward 
-  //driveError = driveSpeed/2;  //The allowed room for error in drive forward X distance
-}
-
-/**
- * Sets the turnSpeed and adjusts the valuse of turnError (Safe to use)
- * #Called once in "setup"
- * 
- * @param newSpeed: the new speed of turnSpeed
- */
-void setTurnSpeed(int newSpeed){
-  //127 is Max Speed => our motors will not run above this
-  //15  is Min Speed => any less and motors will not move
-  turnSpeed = newSpeed;         //Speed of articulationMotors turning
-  turnError = turnSpeed/2;      //The allowed room for error when turning the articulation motors to X angle
-}
+//
+///**
+// * Runs all Articulation Motors (For Testing purposes ONLY)
+// * Should not be used in final code (Will rip out Wires)
+// * 
+// * @param command:  direction we want to go
+// * @param speed:    the speed we want the articulation motors to turn
+// */
+//void runAllArticulation(boolean command, int speed){
+//  for(int i = 6; i < 12; i++){
+//    runMotor(i, command, speed);
+//  }
+//}
+//
+///**
+// * sets one articulation motor to a given degrees (Safe to run)
+// * 
+// * @param ID:      the id of the articulation wheel we want to change
+// * @param degrees: the target degrees we want to turn to
+// */
+//void setOneArticulation(int ID, int degrees){
+//  boolean done = false;
+//  int newOneDegree = degrees + wheelTrueZero[ID-6];
+//  while(done == false){
+//    done = setMotorArticulation(ID, newOneDegree);
+//  }
+//}
+//
+///**
+// * runs all Drive Motors, All 6 drive wheels turn (clockwise/counter-clockwise) uniformly
+// * 
+// * @param direction:  FORWARD(clockwise) or BACKWARD(counter-clock)
+// * @param speed:      The speed you want all 6 drive motors to turn
+// */
+//void runAllDriveUniform(boolean direction, int speed){
+//  //set all drive motors to forward
+//  for(int i = 0; i < 6; i++){
+//    runMotor(i, direction, speed);
+//  }
+//}
+//
+///**
+// * Sets the driveSpeed and adjusts the values of driveError (Safe to use)
+// * #Called once in "setup"
+// * 
+// * @param newSpeed: the new speed of driveSpeed
+// */
+//void setDriveSpeed(int newSpeed){
+//  //127 is Max Speed => our motors will not run above this
+//  //15  is Min Speed => any less and motors will not move
+//  driveSpeed = newSpeed;      //Speed of driveMotors going forward 
+//  //driveError = driveSpeed/2;  //The allowed room for error in drive forward X distance
+//}
+//
+///**
+// * Sets the turnSpeed and adjusts the valuse of turnError (Safe to use)
+// * #Called once in "setup"
+// * 
+// * @param newSpeed: the new speed of turnSpeed
+// */
+//void setTurnSpeed(int newSpeed){
+//  //127 is Max Speed => our motors will not run above this
+//  //15  is Min Speed => any less and motors will not move
+//  turnSpeed = newSpeed;         //Speed of articulationMotors turning
+//  turnError = turnSpeed/2;      //The allowed room for error when turning the articulation motors to X angle
+//}
+//
+//
+///**
+// * Causes no change in motor control until distance = time*speed/timeMod //(Not currently in use but should be)================================================
+// * 
+// * @param distance: The distance we want to keep moving to
+// * @param speed:    The speed at wich we are moving
+// * @param timeMod:  The rate at which speed relates to distance
+// */
+//void keepGoing(int distance, int speed, double timeMod){
+//  float distanceTraveled = 0.0;
+//  
+//  //if we are not within the driveError of the distance, we keep going
+//  while((abs(distance) - distanceTraveled) > 0/*driveError*/){
+//    //delay so we don't run the while loop into an overflow
+//    simpleDelay();
+//    //if we need to pause, pause
+//    checkForInterupt();
+//
+//    //Keeps track of how far we have traveled, based off time
+//    distanceTraveled += driveSpeed/timeMod;
+//  }
+//}
+//
+//
+///**
+// * Pauses   rover if newPause is true and rover is not Paused (NO LONGER USEFULL)
+// * Releases rover if newPause is false and rover is Paused
+// * 
+// * @param newPause: The new pause state
+// */
+//void togglePause(boolean newPause){
+//  if(newPause == true && ardPause == false){
+//    //we need to Pause: stop motors from spining
+//    msg2user("C#" + (String)ardSerialID + ", Paused, stopping all motors\n");
+//    stopAllMotor();
+//    //Bans motors from moving
+//    ardPause = true;
+//  }
+//  else if(newPause == false && ardPause == true){
+//    //if(ardPause == true){ //Allows motors to move
+//    msg2user("\tPause Ended, allow motors to resume\n");
+//    ardPause = false;
+//  }
+//}
+//
+//void sendMsg(){
+//  if(mode == testing){return;};
+//  
+//  ardMsgID++;
+//  //publishes the message
+//  updateMessage();
+//  //clears the old String (so it won't accedently print twice)
+//  ardProgress = "";
+//}
 
 
 
