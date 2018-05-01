@@ -24,7 +24,7 @@ namespace command2ros
       _driveDist_type driveDist;
       typedef int32_t _turn_type;
       _turn_type turn;
-      typedef bool _dig_type;
+      typedef int32_t _dig_type;
       _dig_type dig;
       typedef bool _dump_type;
       _dump_type dump;
@@ -114,11 +114,14 @@ namespace command2ros
       *(outbuffer + offset + 3) = (u_turn.base >> (8 * 3)) & 0xFF;
       offset += sizeof(this->turn);
       union {
-        bool real;
-        uint8_t base;
+        int32_t real;
+        uint32_t base;
       } u_dig;
       u_dig.real = this->dig;
       *(outbuffer + offset + 0) = (u_dig.base >> (8 * 0)) & 0xFF;
+      *(outbuffer + offset + 1) = (u_dig.base >> (8 * 1)) & 0xFF;
+      *(outbuffer + offset + 2) = (u_dig.base >> (8 * 2)) & 0xFF;
+      *(outbuffer + offset + 3) = (u_dig.base >> (8 * 3)) & 0xFF;
       offset += sizeof(this->dig);
       union {
         bool real;
@@ -225,11 +228,14 @@ namespace command2ros
       this->turn = u_turn.real;
       offset += sizeof(this->turn);
       union {
-        bool real;
-        uint8_t base;
+        int32_t real;
+        uint32_t base;
       } u_dig;
       u_dig.base = 0;
-      u_dig.base |= ((uint8_t) (*(inbuffer + offset + 0))) << (8 * 0);
+      u_dig.base |= ((uint32_t) (*(inbuffer + offset + 0))) << (8 * 0);
+      u_dig.base |= ((uint32_t) (*(inbuffer + offset + 1))) << (8 * 1);
+      u_dig.base |= ((uint32_t) (*(inbuffer + offset + 2))) << (8 * 2);
+      u_dig.base |= ((uint32_t) (*(inbuffer + offset + 3))) << (8 * 3);
       this->dig = u_dig.real;
       offset += sizeof(this->dig);
       union {
@@ -276,7 +282,7 @@ namespace command2ros
     }
 
     const char * getType(){ return "command2ros/MovementCommand"; };
-    const char * getMD5(){ return "313c15045e6d52239964373121ab45c4"; };
+    const char * getMD5(){ return "666f10daf673345d930607db5c7a5dec"; };
 
   };
 

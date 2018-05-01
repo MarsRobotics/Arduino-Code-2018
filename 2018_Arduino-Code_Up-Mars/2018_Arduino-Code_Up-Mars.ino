@@ -1,6 +1,13 @@
-//#include <ArduinoHardware.h>
-//#include <ArduinoTcpHardware.h>
-//#include <ros.h>
+/**
+ * Code for the [Arduino Mega 2560]         Tools->Board->Arduino Mega/Genuino Mega or Mega 2560
+ * 
+ * Used to accept a "MovementCommand" from R-Pi (Rasberry Pi), 
+ * interperts thous commands to meeningfull motor movements such as driving and dumping
+ * 
+ * TODO if digging change the speed in reverse for 1 second, ()
+ * 
+ * @author: Ryan Kane
+ */
 
 //====================================================================================================================================================================
 // Wheel-Variables, Varables for each individual wheel
@@ -17,7 +24,7 @@ int numberOfWheels = 15;       //0/6  1/7  2/8  3/9  4/10 5/11
 
 //Test (disabled some wheels by seting their ID to Zero)
 unsigned char wheelID[15] =  {133, 132, 131, 130, 129, 128,         //Drive motors
-                              133,   0, 131, 130, 129, 128,         //articulation motors
+                              133, 132, 131, 130, 129, 128,         //articulation motors
                               0, 0, 0};                         //Misc motors
 
 //If mecanical/electrical make a mistake and put a motor on backwards, set Direction to false to reverse rotations
@@ -25,8 +32,8 @@ boolean wheelDirection[15] = {false, true, false, true, false, false,   //Drive 
                               false, true, false, true, true, false, //articulation motors
                               true, true, true};                    //Misc motors
 
-//articulation sensors's true zero relative to our ideal true zero on rover
-const int wheelTrueZero[6] = {-125, 61, 42, -27, -17, 27}; 
+//articulation sensors's true zero relative to our ideal true zero on rover (+ CounterClock, - ClockWise)
+const int wheelTrueZero[6] = {-5, 51, -150, -15, -5, 0};
 
 //Serial1 on pins 19 (RX) and 18 (TX), Serial2 on pins 17 (RX) and 16 (TX), Serial3 on pins 15 (RX) and 14 (TX)
 //Depending on which wheel type it is, we need to give it a different type of command to move the motor
@@ -35,7 +42,7 @@ const int wheelPinType[15] = {1, 1, 1, 1, 1, 1,
                               1, 1, 1};
 
 //Speed modifier for wheels, (because wheels turn at diffrent speeds for unknown reasons), so they turn at same speed
-double wheelCorectFactor[15] =  {0.955, 1.06, 1.04, 1.07, 1.00, 1.00, //Drive motors
+double wheelCorectFactor[15] =  {1.13, 1.18, 1.14, 1.04, 1.00, 1.00, //Drive motors
                                  2.00, 1.15, 2.30, 1.15, 1.10, 1.20,  //articulation motors
                                  1.0, 1.0, 1.0};                      //Misc motors
 
@@ -64,9 +71,14 @@ const int BACKWARD_ART =5;     //Counter-Clockwise rotation for articulation whe
 
 
 //List of "States" the 6 wheels can be facing, 1024 is 360*, 0 is 0* 
-int stateStorage[6] =   {768, 256, 256, 256, 768, 768};  //orientation of wheels for the storage/collapsed position, (the position our robot will start RMC at)
-int stateForward[6] =   {256, 768, 768, 768, 256, 256};  //orientation of wheels needed to drive straight/forward
-int stateTurning[6] =   {419, 768, 605, 605, 256, 419};  //orientation of wheels needed to turn the robot
+int stateStorage[6] =   {768, 256, 256, 256, 256, 768};  //orientation of wheels for the storage/collapsed position, (the position our robot will start RMC at)
+int stateTurning[6] =   {419, 768, 605, 605, 768, 419};  //orientation of wheels needed to turn the robot
+
+//int stateDrive[6] =   {256, 768, 768, 768, 768, 256};  //orientation of wheels needed to drive straight-ish
+int stateDriveForward[6] =  {256-30, 768+0, 768-10, 768-20, 768+20, 256-15};  //orientation of wheels needed to drive straight->forward
+int stateDriveBackward[6] = {256-10, 768+15, 768-10, 768+0, 768+15, 256+0};  //orientation of wheels needed to drive straight->backward
+
+//Plus is C-CW, Minus is CW
 
 int newDegrees[6] = {0,0,0,0,0,0};  //storage value used to pass an array of Ints between methods //(Should be a better way of doing this, but IDK)
 
@@ -75,7 +87,6 @@ int manualForwardCur = 0;
 int manualTurnCur = 0;
 
 //If Arduino is currently paused or is trying to cancel it's current command
-//boolean ardPause = false;   //If we are Paused we don't run motors, also pauses program
 boolean ardCancel = false;  //If we have been set the "cancel" command, we stop all, and all new methods not start
 int tempSerialID = -999;    //our temporary storage for the last SerialID we got from R-Pi (so we now when we got a fresh message)
 
@@ -155,7 +166,7 @@ void messageCb(const command2ros::MovementCommand &msg){
   //Information from our msg extracted and copied to our varables
   rpiDriveDistance= (int)(msg.driveDist); //Int32
   rpiTurnDegrees  = (int)(msg.turn);      //Int32
-  rpiDigger = msg.dig;      //bool
+  rpiDigger = msg.dig;      //bool //Int32 -1: backward, 0: stop, 1: forward
   rpiDumper = msg.dump;     //bool
   rpiPackIn = msg.packin;   //bool
   rpiEStop =  msg.eStop;    //bool
@@ -209,7 +220,7 @@ void updateMessage(){
  */
 void setup() {
   //Begin all Serial Writers
-  Serial.begin(57600);
+  Serial.begin(9600);//57600
   Serial1.begin(9600);
   Serial2.begin(9600);//TODO may not be needed
   Serial3.begin(9600);//TODO may not be needed
@@ -230,16 +241,16 @@ void setup() {
 int RPiActive = 1;
 int csTesting = 2;
 int mecTesting = 3;
-int mode = RPiActive;// testing; //if(mode == testing){we will use Serial.print to print msg2user}
+int mode = csTesting;// csTesting; //if(mode == csTesting){we will use Serial.print to print msg2user}
 
 /*
  * Special Arduino Methode: Main loop, loops infinitly.
  */
 void loop() {
   if(mode == RPiActive){
-    tempSerialID = rpiSerialID;
-    nh.spinOnce();
     //This should be our real looping method call, (can be disabled for testing)
+    //tempSerialID = rpiSerialID;
+    nh.spinOnce();
     
 //    //Finds the newest messge from R-Pi
 //    while(tempSerialID != rpiSerialID){
@@ -279,11 +290,14 @@ void loop() {
       else if(rpiManual && rpiManualDrive != manualForwardCur){
         commandManualForward(rpiManualDrive); //Manual Command, will remain driving until mesage rpiManualDrive=0 is given
       }else if(rpiManual && rpiManualTurn != manualTurnCur){
-        commandManualTurn(rpiManualTurn);     //Manual Command, will remain turning until mesage rpiManualTurn=0 is given 
+        commandManualTurn(-rpiManualTurn);     //Manual Command, will remain turning until mesage rpiManualTurn=0 is given 
       }
       
       //If we are outside methods we no longer need to cancel current command
       ardCancel = false;
+      
+      //Delay so we don't overload any serial buffers
+      simpleDelay();
     }
   }
 
@@ -291,27 +305,30 @@ void loop() {
     ardSerialID = rpiSerialID;
     //for testing
     printArticulation();
-//    commandPackIn(true);
-//    setAllArticulation(stateForward);
+    commandPackIn(true);
+//    setAllArticulation(stateDriveForward);
 
-//    setAllArticulation(stateStorage); //stateTurning    stateStorage    stateForward
+//    setAllArticulation(stateStorage); //stateTurning    stateStorage    stateDriveForward
 //    setAllArticulation(stateTurning);
-//    setAllArticulation(stateForward);
+//    setAllArticulation(stateDriveForward);
+//    setAllArticulation(stateDriveForward);
 
 //    commandPackIn(true);
 //    commandTurnRover(200);
-//    chainDriveForward(1000);
-//    commandDriveForward(100);
+//    chainDriveForward(70);
+//    commandDriveForward(300);
+//    commandDriveForward(-300);
 //    driveForward(100);
 
 //    driveOneForward(5, 100,40);
 //    driveOneForward(0, 100,40);
-
-    testArticulation(stateForward);
+//
+    testArticulation(stateDriveForward);
+//    testArticulation(stateTurning);
 //    testArticulation(stateStorage);
 
-//    runMotor(8, BACKWARD, 40);
-//    delay(1000); //1000 is a small turn
+//    runMotor(6, BACKWARD, 30);
+//    delay(700); //1000 is a small turn
 //    stopAllMotor();
 
 //    runMotor(8, FORWARD, 30); //BACKWARD(CC)   FORWARD(CW) 
@@ -349,16 +366,12 @@ void loop() {
       setAllArticulation(stateStorage);
     }
     else{
-      setAllArticulation(stateForward); 
+      setAllArticulation(stateDriveForward); 
     }
   }
   else /*if (mode == justStop)*/{
     eternalSleep(); //stopAllMotor and sleep forever
   }
-
-  
-  //Delay so we don't overload any serial buffers
-  simpleDelay();
 }
 
 //void loop() {
@@ -407,7 +420,7 @@ void testArticulation(int stateCur[]){
   //prints the basic data the sensors are giving
   String rawData= "Raw Data given by sensors:   FR: "+
                           (String)(analogRead(A3))+
-               ",\t MR: "+(String)(analogRead(A4))+
+               ",\t MR: "+(String)(analogRead(A4))+  //TODO<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
                ",\t BR: "+(String)(analogRead(A5))+
            ",\t\t\t FL: "+(String)(analogRead(A0))+
                ",\t ML: "+(String)(analogRead(A1))+
@@ -455,11 +468,13 @@ bool systemCheck(){
 
   int testTurn = testStateValid(stateTurning);
   int testStore= testStateValid(stateStorage);
-  int testForwd= testStateValid(stateForward);
+  int testForwd= testStateValid(stateDriveForward);
+  int testBackwd=testStateValid(stateDriveBackward);
 
   msg2user("[stateTurning] margin of error: "+ (String)testTurn +"\n");
   msg2user("[stateStorage] margin of error: "+ (String)testStore +"\n");
-  msg2user("[stateForward] margin of error: "+ (String)testForwd +"\n");
+  msg2user("[stateDriveForward]  margin of error: "+ (String)testForwd +"\n");
+  msg2user("[stateDriveBackward] margin of error: "+ (String)testBackwd +"\n");
 
   //finds if any state is within a known State
   if(testTurn < 100){
@@ -469,7 +484,11 @@ bool systemCheck(){
     msg2user("Articulation Test Passed for: [stateStorage]\n\n");
   }
   else if (testForwd < 100){
-    msg2user("Articulation Test Passed for: [stateForward]\n\n");
+    msg2user("Articulation Test Passed for: [stateDriveForward]\n\n");
+    return true;
+  }
+  else if (testBackwd < 100){
+    msg2user("Articulation Test Passed for: [stateDriveBackward]\n\n");
     return true;
   }
   else{
@@ -515,9 +534,15 @@ void commandDriveForward(int distance){
   ardReady = false;
   
   msg2user("C#" + (String)ardSerialID + ", Driving Rover: "+ (String)distance +"\n");
-  
-  setAllArticulation(stateForward);
-  setAllArticulation(stateForward); //double check to correct any jittering or wigling 
+
+  if(distance > 0){
+    setAllArticulation(stateDriveForward);
+    setAllArticulation(stateDriveForward); //double check to correct any jittering or wigling 
+  }
+  else{
+    setAllArticulation(stateDriveBackward);
+    setAllArticulation(stateDriveBackward); //double check to correct any jittering or wigling 
+  }
   chainDriveForward(distance);
 
   //Tells R-Pi we are ready
@@ -540,7 +565,7 @@ void commandTurnRover(int degrees){
   
   setAllArticulation(stateTurning);
   setAllArticulation(stateTurning);//double check to correct any jittering or wigling
-  turnRover(degrees);
+  turnRover(-degrees);
 
   //Tells R-Pi we are ready
   ardReady = true;
@@ -561,8 +586,8 @@ void commandDigger(boolean startDigger){
   msg2user("C#" + (String)ardSerialID + ", Digging\n");
 
   //make sure wheels will not block the digger
-  setAllArticulation(stateForward);
-  setAllArticulation(stateForward);
+  setAllArticulation(stateDriveForward);
+  setAllArticulation(stateDriveForward);
   //move wench down, run digger, move wench back up
   driveOneForward(13, wenchDistance, wenchSpeed); //move wench down into dirt
   
@@ -706,8 +731,8 @@ void commandManualForward(int direction){
   if(direction == 1){
     msg2user("C#" + (String)ardSerialID + ", MANUAL: Drive Forward\n");
     //get the Rover's wheels facing straight
-    setAllArticulation(stateForward);
-    setAllArticulation(stateForward);
+    setAllArticulation(stateDriveForward);
+    setAllArticulation(stateDriveForward);
     manualForwardCur = 1;
     //drive forward
     activeDriveForward(FORWARD, driveSpeed);
@@ -715,8 +740,8 @@ void commandManualForward(int direction){
   else if(direction == -1){
     msg2user("C#" + (String)ardSerialID + ", MANUAL: Drive Backward\n");
     //get the Rover's wheels facing straight
-    setAllArticulation(stateForward);
-    setAllArticulation(stateForward);
+    setAllArticulation(stateDriveBackward);
+    setAllArticulation(stateDriveBackward);
     manualForwardCur = -1;
     //drive backward
     activeDriveForward(BACKWARD, driveSpeed);
@@ -1006,8 +1031,10 @@ void setAllArticulation(int degrees[6]){
   
   if(degrees == stateStorage){
     msg2user("\tarticulating->stateStorage, ");
-  }else if(degrees == stateForward){
-    msg2user("\tarticulating->stateForward, ");
+  }else if(degrees == stateDriveForward){
+    msg2user("\tarticulating->stateDriveForward, ");
+  }else if(degrees == stateDriveBackward){
+    msg2user("\tarticulating->stateDriveBackward, ");
   }else if(degrees == stateTurning){
     msg2user("\tarticulating->stateTurning, ");
   }else{

@@ -28,6 +28,8 @@ namespace command2ros
       _errorTurning_type errorTurning;
       typedef int32_t _messageID_type;
       _messageID_type messageID;
+      typedef int32_t _digVal_type;
+      _digVal_type digVal;
 
     ArduinoMessage():
       ready(0),
@@ -37,7 +39,8 @@ namespace command2ros
       errorDigging(0),
       errorDumping(0),
       errorTurning(0),
-      messageID(0)
+      messageID(0),
+      digVal(0)
     {
     }
 
@@ -104,6 +107,16 @@ namespace command2ros
       *(outbuffer + offset + 2) = (u_messageID.base >> (8 * 2)) & 0xFF;
       *(outbuffer + offset + 3) = (u_messageID.base >> (8 * 3)) & 0xFF;
       offset += sizeof(this->messageID);
+      union {
+        int32_t real;
+        uint32_t base;
+      } u_digVal;
+      u_digVal.real = this->digVal;
+      *(outbuffer + offset + 0) = (u_digVal.base >> (8 * 0)) & 0xFF;
+      *(outbuffer + offset + 1) = (u_digVal.base >> (8 * 1)) & 0xFF;
+      *(outbuffer + offset + 2) = (u_digVal.base >> (8 * 2)) & 0xFF;
+      *(outbuffer + offset + 3) = (u_digVal.base >> (8 * 3)) & 0xFF;
+      offset += sizeof(this->digVal);
       return offset;
     }
 
@@ -181,11 +194,22 @@ namespace command2ros
       u_messageID.base |= ((uint32_t) (*(inbuffer + offset + 3))) << (8 * 3);
       this->messageID = u_messageID.real;
       offset += sizeof(this->messageID);
+      union {
+        int32_t real;
+        uint32_t base;
+      } u_digVal;
+      u_digVal.base = 0;
+      u_digVal.base |= ((uint32_t) (*(inbuffer + offset + 0))) << (8 * 0);
+      u_digVal.base |= ((uint32_t) (*(inbuffer + offset + 1))) << (8 * 1);
+      u_digVal.base |= ((uint32_t) (*(inbuffer + offset + 2))) << (8 * 2);
+      u_digVal.base |= ((uint32_t) (*(inbuffer + offset + 3))) << (8 * 3);
+      this->digVal = u_digVal.real;
+      offset += sizeof(this->digVal);
      return offset;
     }
 
     const char * getType(){ return "command2ros/ArduinoMessage"; };
-    const char * getMD5(){ return "a7d9c2f1772c7f2f2538e66a8339c845"; };
+    const char * getMD5(){ return "ca959ef1073f7bcad1c539ffd6adf26c"; };
 
   };
 
