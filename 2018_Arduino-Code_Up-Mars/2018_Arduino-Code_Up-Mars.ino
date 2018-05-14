@@ -1,12 +1,27 @@
 /**
- * Code for the [Arduino Mega 2560]         Tools->Board->Arduino Mega/Genuino Mega or Mega 2560
+ * Code for the [Arduino Mega 2560]         
  * 
+ * ===Start up instructions===
+ * On Arduino Edditor:
+ *    Tools->Board->Arduino Mega/Genuino Mega or Mega 2560 
+ *    Tools->Port-COM7
+ * 
+ * Arduino-Code-2018 -> ros_lib (in github, needs to added to your system)
+ *    ^^^needs to be added into Arduino\libraries (onto the PC running this code)
+ *    In my system, the libraries folder is in:   "C:\Users\Ryan\Documents\Arduino\libraries"
+ *    This library is needed to understand the custom messages we created for ROS to send back and forth from R-Pi to Arduino
+ * 
+ * ===About This Code===
  * Used to accept a "MovementCommand" from R-Pi (Rasberry Pi), 
- * interperts thous commands to meeningfull motor movements such as driving and dumping
+ * interperts thouse commands to meaningful motor movements such as driving, digging, and dumping
  * 
- * TODO if digging change the speed in reverse for 1 second, ()
+ * NOTE: the "wench" is controled by the Uno in "stepper_control" (the wench/stepper is the only motor not controled through this code)
+ * NOTE: I call all motors "wheels" -sorry, but I do it a lot, so don't get confused
  * 
- * @author: Ryan Kane
+ * TODO if digging change the speed in reverse for 1 second
+ * TODO have the digger and dumper values be the speed passed rather then the -1 & 1
+ * 
+ * @author: Ryan Kane, ryanjkane911@yahoo.com
  */
 
 //====================================================================================================================================================================
@@ -16,21 +31,21 @@ int numberOfWheels = 15;       //0/6  1/7  2/8  3/9  4/10 5/11
 
 //String wheelName[15] =       {"fr-0", "mr-1", "br-2", "fl-3", "ml-4",  "bl-5",  //Drive motors  //"fr" means Fount-Right, ext
 //                              "fr-6", "mr-7", "br-8", "fl-9", "ml-10", "bl-11", //articulation motors //"bl" means Rear-Left
-//                              "dumper-12", "wench-13", "digger-14"};            //Misc motors
+//                              "dumper-12", "wench-13", "digger-14"};            //Misc motors (NOTE: "wench" is controled by the Uno in "stepper_control")
 
 //unsigned char wheelID[15] =  {133, 132, 131, 130, 129, 128,         //Drive motors
 //                              133, 132, 131, 130, 129, 128,         //articulation motors
-//                              100, 100, 100};                       //Misc motors
+//                              134,   0, 134};                       //Misc motors
 
-//Test (disabled some wheels by seting their ID to Zero)
+//For Testing (you can disable wheels by seting their ID to Zero -> Rover will not attempt to articulate 0-ed wheels)
 unsigned char wheelID[15] =  {133, 132, 131, 130, 129, 128,         //Drive motors
                               133, 132, 131, 130, 129, 128,         //articulation motors
-                              0, 0, 0};                         //Misc motors
+                              134,   0, 134};                         //Misc motors
 
 //If mecanical/electrical make a mistake and put a motor on backwards, set Direction to false to reverse rotations
 boolean wheelDirection[15] = {false, true, false, true, false, false,   //Drive motors
                               false, true, false, true, true, false, //articulation motors
-                              true, true, true};                    //Misc motors
+                              true, true, false};                    //Misc motors
 
 //articulation sensors's true zero relative to our ideal true zero on rover (+ CounterClock, - ClockWise)
 const int wheelTrueZero[6] = {-5, 51, -150, -15, -5, 0};
@@ -39,11 +54,11 @@ const int wheelTrueZero[6] = {-5, 51, -150, -15, -5, 0};
 //Depending on which wheel type it is, we need to give it a different type of command to move the motor
 const int wheelPinType[15] = {1, 1, 1, 1, 1, 1,
                               2, 2, 2, 2, 2, 2,
-                              1, 1, 1};
+                              2, 1, 1};
 
 //Speed modifier for wheels, (because wheels turn at diffrent speeds for unknown reasons), so they turn at same speed
 double wheelCorectFactor[15] =  {1.13, 1.18, 1.14, 1.04, 1.00, 1.00, //Drive motors
-                                 2.00, 1.15, 2.30, 1.15, 1.10, 1.20,  //articulation motors
+                                 2.00, 1.15, 1.30, 1.15, 1.10, 1.20,  //articulation motors
                                  1.0, 1.0, 1.0};                      //Misc motors
 
 //====================================================================================================================================================================
@@ -85,6 +100,8 @@ int newDegrees[6] = {0,0,0,0,0,0};  //storage value used to pass an array of Int
 //Storage to remember if manual buttons are being pressed, used to detect a change in manual commands from R-Pi
 int manualForwardCur = 0;
 int manualTurnCur = 0;
+int manualDigger = 0;
+int manualDumper = 0;
 
 //If Arduino is currently paused or is trying to cancel it's current command
 boolean ardCancel = false;  //If we have been set the "cancel" command, we stop all, and all new methods not start
@@ -95,14 +112,14 @@ int tempSerialID = -999;    //our temporary storage for the last SerialID we got
 //====================================================================================================================================================================
 
 //The amount of time and speed the digger and dumper will take to dig and dumping
-int diggerTime   = 1000; 
-int diggerSpeed = 30;
+//int diggerTime   = 1000; //This is Expermental for autonomus digging
+int diggerSpeed = 120;
 int diggerDriveSpeed = 30;
 
 int wenchDistance= 1000;
 int wenchSpeed  = 30;
 
-int dumperTime  = 1000;
+//int dumperTime  = 1000; //This is Expermental for autonomus dumping
 int dumperSpeed = 30;
 
 //====================================================================================================================================================================
@@ -130,7 +147,7 @@ ros::NodeHandle nh;   //Our Ros Node
  */
 int rpiDriveDistance= 0;      //how far R-Pi wants Arduino to Drive Forward (negative for Drive Backwards)
 int rpiTurnDegrees  = 0;      //how far R-Pi wants Arduino to Turn Right    (negative for Turn Left)
-boolean rpiDigger = false;    //true, to dig
+int rpiDigger =       0;      //1: to dig, 0: to stop, -1 to reverse digger
 boolean rpiDumper = false;    //true, to dump
 boolean rpiPackIn = false;    //true, to pack in our wheels (too the starting/storage state)
 boolean rpiPause =  false;    //true, to pause, stop all motors and acept no new command till [rpiPause =  false;] is sent
@@ -166,7 +183,7 @@ void messageCb(const command2ros::MovementCommand &msg){
   //Information from our msg extracted and copied to our varables
   rpiDriveDistance= (int)(msg.driveDist); //Int32
   rpiTurnDegrees  = (int)(msg.turn);      //Int32
-  rpiDigger = msg.dig;      //bool //Int32 -1: backward, 0: stop, 1: forward
+  rpiDigger = msg.dig;      //Int32 -1: backward, 0: stop, 1: forward
   rpiDumper = msg.dump;     //bool
   rpiPackIn = msg.packin;   //bool
   rpiEStop =  msg.eStop;    //bool
@@ -238,10 +255,10 @@ void setup() {
   nh.spinOnce(); //ROS updates comunication
 }
 
-int RPiActive = 1;
-int csTesting = 2;
+int RPiActive = 1;    //If we want the Arduino to listen for commands from the R-Pi set "mode = RPiActive"
+int csTesting = 2;    //Arduino will run test code only (if "mode = csTesting" R-Pi will not connect to Arduino)
 int mecTesting = 3;
-int mode = csTesting;// csTesting; //if(mode == csTesting){we will use Serial.print to print msg2user}
+int mode = csTesting; // csTesting; //if(mode == csTesting){we will use Serial.print to print msg2user}
 
 /*
  * Special Arduino Methode: Main loop, loops infinitly.
@@ -249,8 +266,9 @@ int mode = csTesting;// csTesting; //if(mode == csTesting){we will use Serial.pr
 void loop() {
   if(mode == RPiActive){
     //This should be our real looping method call, (can be disabled for testing)
-    //tempSerialID = rpiSerialID;
+    //updates comunication from R-Pi, this IS needed for R-Pi to connect with Arduino
     nh.spinOnce();
+
     
 //    //Finds the newest messge from R-Pi
 //    while(tempSerialID != rpiSerialID){
@@ -266,24 +284,29 @@ void loop() {
       //Only executes one command, per new rpiSerialID (prevents potential conflicts)
       if(rpiEStop){
         commandEStop(rpiEStop);               //permently stop rover, and disables Arduino
-      }else if(rpiPause/* != ardPause*/){
+      }else if(rpiPause){
         commandPause(rpiPause);               //Stops motors and waits till rpiPause==false
       }else if(rpiDriveDistance != 0){
         commandDriveForward(rpiDriveDistance);//Automated drive forward
       }else if(rpiTurnDegrees != 0){
         commandTurnRover(rpiTurnDegrees);     //Automated turn Rover X distance
-      }else if(rpiDigger){
-        commandDigger(rpiDigger);             //Automated run Digger X distance
-      }else if(rpiDumper){
-        commandDumper(rpiDumper);             //Automated run Dumper
       }else if(rpiPackIn){
         commandPackIn(rpiPackIn);             //Automated "PackIn" to our starting state
       }else if(rpiCancel){
         //R-Pi asked for cancel, but where not running a command
         manualTurnCur = 0;  
         manualForwardCur = 0;
+        manualDigger = 0;
+        manualDumper = 0;
         msg2user("/t <<<Command Canceled>>> (Outside Known Method=>Just Stoping Motors)\n");
         stopAllMotor();
+      }
+
+      //Digger and Dumper Toggles
+      else if(rpiDigger != manualDigger){
+        commandDigger(rpiDigger);             //Start, Reverse, or Stop Digger
+      }else if(rpiDumper != manualDumper){
+        commandDumper(rpiDumper);             //Start or Stop Dumper
       }
 
       //Manual Commands
@@ -293,7 +316,7 @@ void loop() {
         commandManualTurn(-rpiManualTurn);     //Manual Command, will remain turning until mesage rpiManualTurn=0 is given 
       }
       
-      //If we are outside methods we no longer need to cancel current command
+      //If we are outside executable methods we no longer need to cancel current command
       ardCancel = false;
       
       //Delay so we don't overload any serial buffers
@@ -302,16 +325,18 @@ void loop() {
   }
 
   else if (mode == csTesting){
+    //This is Test code, it only runs once, and does not connencet to the R-Pi
+    
     ardSerialID = rpiSerialID;
     //for testing
     printArticulation();
-    commandPackIn(true);
+//    commandPackIn(true);
 //    setAllArticulation(stateDriveForward);
 
 //    setAllArticulation(stateStorage); //stateTurning    stateStorage    stateDriveForward
 //    setAllArticulation(stateTurning);
-//    setAllArticulation(stateDriveForward);
-//    setAllArticulation(stateDriveForward);
+    setAllArticulation(stateDriveForward);
+    setAllArticulation(stateDriveForward);
 
 //    commandPackIn(true);
 //    commandTurnRover(200);
@@ -327,7 +352,7 @@ void loop() {
 //    testArticulation(stateTurning);
 //    testArticulation(stateStorage);
 
-//    runMotor(6, BACKWARD, 30);
+//    runMotor(11, BACKWARD, 30);
 //    delay(700); //1000 is a small turn
 //    stopAllMotor();
 
@@ -374,11 +399,6 @@ void loop() {
   }
 }
 
-//void loop() {
-//  nh.spinOnce();
-//  delay(1);
-//}
-
 //====================================================================================================================================================================
 // Print Methods, these methods are used for testing and gathering data, (Not called by R-Pi)
 //====================================================================================================================================================================
@@ -420,7 +440,7 @@ void testArticulation(int stateCur[]){
   //prints the basic data the sensors are giving
   String rawData= "Raw Data given by sensors:   FR: "+
                           (String)(analogRead(A3))+
-               ",\t MR: "+(String)(analogRead(A4))+  //TODO<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+               ",\t MR: "+(String)(analogRead(A4))+ 
                ",\t BR: "+(String)(analogRead(A5))+
            ",\t\t\t FL: "+(String)(analogRead(A0))+
                ",\t ML: "+(String)(analogRead(A1))+
@@ -573,53 +593,60 @@ void commandTurnRover(int degrees){
 }
 
 /**
- * Cause the rover to lower wench and runs the digger for "diggerTime"
- * 
- * @param startDigger: true if we want to dig now
+ * If the command from R-Pi wants the digger to move diffrently then how it is currently moving, 
+ *      => change the speed/direction of the digger
+ *      
+ * @param diggerState: the new state from R-Pi
  */
-void commandDigger(boolean startDigger){
-  //If digger in is false we didn't actualy want to call this method
-  if(startDigger == false || rpiPause){ return;}
-  ardReady = false;
-  ardSerialID = rpiSerialID;  //Update new SerialID
-  
-  msg2user("C#" + (String)ardSerialID + ", Digging\n");
-
-  //make sure wheels will not block the digger
-  setAllArticulation(stateDriveForward);
-  setAllArticulation(stateDriveForward);
-  //move wench down, run digger, move wench back up
-  driveOneForward(13, wenchDistance, wenchSpeed); //move wench down into dirt
-  
-  //drive forward while we dig down
-  activeDriveForward(FORWARD, diggerDriveSpeed);
-  driveOneForward(12, diggerTime, diggerSpeed);   //run digger
-  stopAllMotor(); //stops all digging and driving motors
-  
-  driveOneForward(13, -wenchDistance, wenchSpeed);//move wench back up
-  
-  ardReady = true;
-  msg2user("\tDone Digging\n");
+void commandDigger(int tempDiggerSpeed){
+  //if the new state does not match our memorized state
+  if(tempDiggerSpeed != manualDigger){
+    if(tempDiggerSpeed >= 1){
+      
+//  //drive forward while we dig down       //TODO<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+//  setAllArticulation(stateDriveForward);
+//  setAllArticulation(stateDriveForward);
+//  activeDriveForward(FORWARD, diggerDriveSpeed);
+      //run the digger forward
+      runMotor(14, FORWARD, tempDiggerSpeed);
+      msg2user("C#" + (String)ardSerialID + ", Digging Forward\n");
+    }else if(tempDiggerSpeed <= -1){
+      //run the digger backward
+      runMotor(14, BACKWARD, -tempDiggerSpeed);
+      msg2user("C#" + (String)ardSerialID + ", Digging Reverse\n");
+    }else{
+      //stop the digger
+      runMotor(14, FORWARD, 0);
+      msg2user("C#" + (String)ardSerialID + ", Digging Stoped\n");
+    }
+    
+    //save the current state to memory
+    manualDigger = tempDiggerSpeed;
+  }
 }
 
 /**
- * Cause the rover run the dumper for "dumperTime"
- * 
- * @param startDumper: true if we want to dump right now
+ * If the command from R-Pi wants the dumper to move diffrently then how it is currently moving, 
+ *      => change the speed/direction of the dumper
+ *      
+ * @param dumperState: the new state from R-Pi
  */
-void commandDumper(boolean startDumper){
-  //If dumper in is false we didn't actualy want to call this method
-  if(startDumper == false || rpiPause){ return;}
-  ardReady = false;
-  ardSerialID = rpiSerialID;  //Update new SerialID
-  
-  msg2user("C#" + (String)ardSerialID + ", Dumping\n");
-
-  //run the dumper for dumperTime
-  driveOneForward(14, dumperTime, dumperSpeed); //run dumper
-  
-  ardReady = true;
-  msg2user("\tDone Dumping\n");
+void commandDumper(int tempDumperSpeed){
+  //if the new state does not match our memorized state
+  if(tempDumperSpeed != manualDumper){
+    if(tempDumperSpeed > 0){
+      //run the dumper
+      runMotor(12, FORWARD, tempDumperSpeed);
+      msg2user("C#" + (String)ardSerialID + ", Running Dumper\n");
+    }else{
+      //stop the dumper
+      runMotor(12, FORWARD, 0);
+      msg2user("C#" + (String)ardSerialID + ", Stoping Dumper\n");
+    }
+    
+    //save the current state to memory
+    manualDumper = tempDumperSpeed;
+  }
 }
 
 /**
@@ -1469,6 +1496,63 @@ void msg2user(String printLine){
 //  //clears the old String (so it won't accedently print twice)
 //  ardProgress = "";
 //}
+//
+//====================================================================================================================================================================
+//In Proggress Methods, we wished to use these automated methods, but due to time contrainst they were never tested (not used in final code)
+//====================================================================================================================================================================
+///**
+// * Automated instructions for running the whole digging system by itself (run and forget type method)
+// * Cause the rover to lower wench and runs the digger for "diggerTime"
+// * 
+// * @param startDigger: true if we want to dig now
+// */
+//void commandDigger(boolean startDigger){
+//  //If digger in is false we didn't actualy want to call this method
+//  if(startDigger == false || rpiPause){ return;}
+//  ardReady = false;
+//  ardSerialID = rpiSerialID;  //Update new SerialID
+//  
+//  msg2user("C#" + (String)ardSerialID + ", Digging\n");
+//
+//  //make sure wheels will not block the digger
+//  setAllArticulation(stateDriveForward);
+//  setAllArticulation(stateDriveForward);
+//  //move wench down, run digger, move wench back up
+//  driveOneForward(13, wenchDistance, wenchSpeed); //move wench down into dirt
+//  
+//  //drive forward while we dig down
+//  activeDriveForward(FORWARD, diggerDriveSpeed);
+//  driveOneForward(12, diggerTime, diggerSpeed);   //run digger
+//  stopAllMotor(); //stops all digging and driving motors
+//  
+//  driveOneForward(13, -wenchDistance, wenchSpeed);//move wench back up
+//  
+//  ardReady = true;
+//  msg2user("\tDone Digging\n");
+//}
+//
+///**
+// * Automated dummping method, (run and forget)
+// * Cause the rover run the dumper for "dumperTime"
+// * 
+// * @param startDumper: true if we want to dump right now
+// */
+//void autoDumper(boolean startDumper){
+//  //If dumper in is false we didn't actualy want to call this method
+//  if(startDumper == false || rpiPause){ return;}
+//  ardReady = false;
+//  ardSerialID = rpiSerialID;  //Update new SerialID
+//  
+//  msg2user("C#" + (String)ardSerialID + ", Dumping\n");
+//
+//  //run the dumper for dumperTime
+//  driveOneForward(14, dumperTime, dumperSpeed); //run dumper
+//  
+//  ardReady = true;
+//  msg2user("\tDone Dumping\n");
+//}
+
+
 
 
 
