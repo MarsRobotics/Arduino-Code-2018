@@ -28,24 +28,24 @@ void messageCb(const command2ros::Digger &msg){
 ros::Subscriber<command2ros::Digger> sub("Digger", &messageCb); //Subscribe to "MovementCommand" (Msg we get from R-Pi)  
 
 //for first stepper motor
-int PUL-1=7; //define Pulse pin
-int DIR-1=6; //define Direction pin
-int ENA-1=5; //define Enable Pin
+int PUL_1=7; //define Pulse pin
+int DIR_1=6; //define Direction pin
+int ENA_1=5; //define Enable Pin
 //for second steper motor
-int PUL-2=7; //define Pulse pin
-int DIR-2=6; //define Direction pin
-int ENA-2=5; //define Enable Pin
+int PUL_2=7; //define Pulse pin
+int DIR_2=6; //define Direction pin
+int ENA_2=5; //define Enable Pin
 
 
 void setup() {
   Serial.begin(9600);//for printing mesages to the user
-  pinMode (PUL-1, OUTPUT);
-  pinMode (DIR-1, OUTPUT);
-  pinMode (ENA-1, OUTPUT);
+  pinMode (PUL_1, OUTPUT);
+  pinMode (DIR_1, OUTPUT);
+  pinMode (ENA_1, OUTPUT);
   //for second motor
-  pinMode (PUL-2, OUTPUT);
-  pinMode (DIR-2, OUTPUT);
-  pinMode (ENA-2, OUTPUT);
+  pinMode (PUL_2, OUTPUT);  //second
+  pinMode (DIR_2, OUTPUT);  //second
+  pinMode (ENA_2, OUTPUT);  //second
   nh.initNode();
   nh.subscribe(sub);
   nh.spinOnce(); //ROS updates comunication
@@ -68,28 +68,30 @@ void loop() {
     if(rpiDigger == -1){
       //lower Digger
       for (int i=0; i<100; i++){
-        digitalWrite(DIR-1,LOW);
-        digitalWrite(ENA-1,HIGH);
-        digitalWrite(PUL-1,HIGH);
-        //second
-        digitalWrite(DIR-2,LOW);
-        digitalWrite(ENA-2,HIGH);
-        digitalWrite(PUL-2,HIGH);
+        digitalWrite(DIR_1,LOW);
+        digitalWrite(ENA_1,HIGH);
+        digitalWrite(PUL_1,HIGH);
+        digitalWrite(DIR_2,LOW);   //second
+        digitalWrite(ENA_2,HIGH);  //second
+        digitalWrite(PUL_2,HIGH);  //second
         delayMicroseconds(pulseDw);
-        digitalWrite(PUL-1,LOW);
-        //second
-        digitalWrite(PUL-2,LOW);
+        digitalWrite(PUL_1,LOW);
+        digitalWrite(PUL_2,LOW);   //second
         delayMicroseconds(pulseDw);
       }
     }
     else if(rpiDigger == 1){
       //raise Digger
       for (int i=0; i<100; i++){
-        digitalWrite(DIR,HIGH);
-        digitalWrite(ENA,HIGH);
-        digitalWrite(PUL,HIGH);
+        digitalWrite(DIR_1,HIGH);
+        digitalWrite(ENA_1,HIGH);
+        digitalWrite(PUL_1,HIGH);
+        digitalWrite(DIR_2,HIGH);  //second
+        digitalWrite(ENA_2,HIGH);  //second
+        digitalWrite(PUL_2,HIGH);  //second
         delayMicroseconds(pulseUp);
-        digitalWrite(PUL,LOW);
+        digitalWrite(PUL_1,LOW);
+        digitalWrite(PUL_2,LOW);   //second
         delayMicroseconds(pulseUp);
       }
     }
@@ -104,11 +106,15 @@ void loop() {
       Serial.print("UP: "+ (String)tempUp + "\n");
       for (int i=0; i<4800; i++)   //Backward 5000 steps
       {
-        digitalWrite(DIR,HIGH);
-        digitalWrite(ENA,HIGH);
-        digitalWrite(PUL,HIGH);
+        digitalWrite(DIR_1,HIGH);
+        digitalWrite(ENA_1,HIGH);
+        digitalWrite(PUL_1,HIGH);
+        digitalWrite(DIR_2,HIGH);  //second
+        digitalWrite(ENA_2,HIGH);  //second
+        digitalWrite(PUL_2,HIGH);  //second
         delayMicroseconds(tempUp);
-        digitalWrite(PUL,LOW);
+        digitalWrite(PUL_1,LOW);
+        digitalWrite(PUL_2,LOW);   //second
         delayMicroseconds(tempUp);
       }
     }

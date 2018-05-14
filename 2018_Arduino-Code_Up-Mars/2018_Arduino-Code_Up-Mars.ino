@@ -1,7 +1,7 @@
 /**
  * Code for the [Arduino Mega 2560]         
  * 
- * ===Start up instructions===
+ * ===Set up instructions===
  * On Arduino Edditor:
  *    Tools->Board->Arduino Mega/Genuino Mega or Mega 2560 
  *    Tools->Port-COM7
