@@ -7,15 +7,16 @@
  * 
  * msg.raise; -1 lower, 0 stop, 1 raise
  * 
- * @author: Ryan Kane
+ * @author: Ryan Kane ryanjkane911@yahoo.com
  */
 
 //ROS includes
 #include <ros.h>
 #include <std_msgs/Int32.h>
 #include <command2ros/Digger.h>
-ros::NodeHandle nh;
+ros::NodeHandle nh; //our node handle
 
+//storage vale for saving command from R-Pi
 int rpiDigger = 0;
 
 /**
@@ -25,27 +26,20 @@ void messageCb(const command2ros::Digger &msg){
   rpiDigger = msg.raise;
 }
 
-ros::Subscriber<command2ros::Digger> sub("Digger", &messageCb); //Subscribe to "MovementCommand" (Msg we get from R-Pi)  
+//Our Subscriber
+ros::Subscriber<command2ros::Digger> sub("Digger", &messageCb); //Subscribe to "Digger" (Msg we get from R-Pi)  
 
-//for first stepper motor
-int PUL_1=7; //define Pulse pin
-int DIR_1=6; //define Direction pin
-int ENA_1=5; //define Enable Pin
-//for second steper motor
-int PUL_2=7; //define Pulse pin
-int DIR_2=6; //define Direction pin
-int ENA_2=5; //define Enable Pin
+//for stepper motors
+int PUL=7; //define Pulse pin
+int DIR=6; //define Direction pin
+int ENA=5; //define Enable Pin
 
 
 void setup() {
   Serial.begin(9600);//for printing mesages to the user
-  pinMode (PUL_1, OUTPUT);
-  pinMode (DIR_1, OUTPUT);
-  pinMode (ENA_1, OUTPUT);
-  //for second motor
-  pinMode (PUL_2, OUTPUT);  //second
-  pinMode (DIR_2, OUTPUT);  //second
-  pinMode (ENA_2, OUTPUT);  //second
+  pinMode (PUL, OUTPUT);
+  pinMode (DIR, OUTPUT);
+  pinMode (ENA, OUTPUT);
   nh.initNode();
   nh.subscribe(sub);
   nh.spinOnce(); //ROS updates comunication
@@ -68,30 +62,22 @@ void loop() {
     if(rpiDigger == -1){
       //lower Digger
       for (int i=0; i<100; i++){
-        digitalWrite(DIR_1,LOW);
-        digitalWrite(ENA_1,HIGH);
-        digitalWrite(PUL_1,HIGH);
-        digitalWrite(DIR_2,LOW);   //second
-        digitalWrite(ENA_2,HIGH);  //second
-        digitalWrite(PUL_2,HIGH);  //second
+        digitalWrite(DIR,LOW);
+        digitalWrite(ENA,HIGH);
+        digitalWrite(PUL,HIGH);
         delayMicroseconds(pulseDw);
-        digitalWrite(PUL_1,LOW);
-        digitalWrite(PUL_2,LOW);   //second
+        digitalWrite(PUL,LOW);
         delayMicroseconds(pulseDw);
       }
     }
     else if(rpiDigger == 1){
       //raise Digger
       for (int i=0; i<100; i++){
-        digitalWrite(DIR_1,HIGH);
-        digitalWrite(ENA_1,HIGH);
-        digitalWrite(PUL_1,HIGH);
-        digitalWrite(DIR_2,HIGH);  //second
-        digitalWrite(ENA_2,HIGH);  //second
-        digitalWrite(PUL_2,HIGH);  //second
+        digitalWrite(DIR,HIGH);
+        digitalWrite(ENA,HIGH);
+        digitalWrite(PUL,HIGH);
         delayMicroseconds(pulseUp);
-        digitalWrite(PUL_1,LOW);
-        digitalWrite(PUL_2,LOW);   //second
+        digitalWrite(PUL,LOW);
         delayMicroseconds(pulseUp);
       }
     }
@@ -106,15 +92,11 @@ void loop() {
       Serial.print("UP: "+ (String)tempUp + "\n");
       for (int i=0; i<4800; i++)   //Backward 5000 steps
       {
-        digitalWrite(DIR_1,HIGH);
-        digitalWrite(ENA_1,HIGH);
-        digitalWrite(PUL_1,HIGH);
-        digitalWrite(DIR_2,HIGH);  //second
-        digitalWrite(ENA_2,HIGH);  //second
-        digitalWrite(PUL_2,HIGH);  //second
+        digitalWrite(DIR,HIGH);
+        digitalWrite(ENA,HIGH);
+        digitalWrite(PUL,HIGH);
         delayMicroseconds(tempUp);
-        digitalWrite(PUL_1,LOW);
-        digitalWrite(PUL_2,LOW);   //second
+        digitalWrite(PUL,LOW);
         delayMicroseconds(tempUp);
       }
     }

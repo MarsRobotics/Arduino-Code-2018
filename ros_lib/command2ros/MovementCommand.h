@@ -26,7 +26,7 @@ namespace command2ros
       _turn_type turn;
       typedef int32_t _dig_type;
       _dig_type dig;
-      typedef bool _dump_type;
+      typedef int32_t _dump_type;
       _dump_type dump;
       typedef bool _packin_type;
       _packin_type packin;
@@ -36,6 +36,8 @@ namespace command2ros
       _pause_type pause;
       typedef bool _cancel_type;
       _cancel_type cancel;
+      typedef int32_t _raiseForDig_type;
+      _raiseForDig_type raiseForDig;
 
     MovementCommand():
       serialID(0),
@@ -49,7 +51,8 @@ namespace command2ros
       packin(0),
       eStop(0),
       pause(0),
-      cancel(0)
+      cancel(0),
+      raiseForDig(0)
     {
     }
 
@@ -124,11 +127,14 @@ namespace command2ros
       *(outbuffer + offset + 3) = (u_dig.base >> (8 * 3)) & 0xFF;
       offset += sizeof(this->dig);
       union {
-        bool real;
-        uint8_t base;
+        int32_t real;
+        uint32_t base;
       } u_dump;
       u_dump.real = this->dump;
       *(outbuffer + offset + 0) = (u_dump.base >> (8 * 0)) & 0xFF;
+      *(outbuffer + offset + 1) = (u_dump.base >> (8 * 1)) & 0xFF;
+      *(outbuffer + offset + 2) = (u_dump.base >> (8 * 2)) & 0xFF;
+      *(outbuffer + offset + 3) = (u_dump.base >> (8 * 3)) & 0xFF;
       offset += sizeof(this->dump);
       union {
         bool real;
@@ -158,6 +164,16 @@ namespace command2ros
       u_cancel.real = this->cancel;
       *(outbuffer + offset + 0) = (u_cancel.base >> (8 * 0)) & 0xFF;
       offset += sizeof(this->cancel);
+      union {
+        int32_t real;
+        uint32_t base;
+      } u_raiseForDig;
+      u_raiseForDig.real = this->raiseForDig;
+      *(outbuffer + offset + 0) = (u_raiseForDig.base >> (8 * 0)) & 0xFF;
+      *(outbuffer + offset + 1) = (u_raiseForDig.base >> (8 * 1)) & 0xFF;
+      *(outbuffer + offset + 2) = (u_raiseForDig.base >> (8 * 2)) & 0xFF;
+      *(outbuffer + offset + 3) = (u_raiseForDig.base >> (8 * 3)) & 0xFF;
+      offset += sizeof(this->raiseForDig);
       return offset;
     }
 
@@ -239,11 +255,14 @@ namespace command2ros
       this->dig = u_dig.real;
       offset += sizeof(this->dig);
       union {
-        bool real;
-        uint8_t base;
+        int32_t real;
+        uint32_t base;
       } u_dump;
       u_dump.base = 0;
-      u_dump.base |= ((uint8_t) (*(inbuffer + offset + 0))) << (8 * 0);
+      u_dump.base |= ((uint32_t) (*(inbuffer + offset + 0))) << (8 * 0);
+      u_dump.base |= ((uint32_t) (*(inbuffer + offset + 1))) << (8 * 1);
+      u_dump.base |= ((uint32_t) (*(inbuffer + offset + 2))) << (8 * 2);
+      u_dump.base |= ((uint32_t) (*(inbuffer + offset + 3))) << (8 * 3);
       this->dump = u_dump.real;
       offset += sizeof(this->dump);
       union {
@@ -278,11 +297,22 @@ namespace command2ros
       u_cancel.base |= ((uint8_t) (*(inbuffer + offset + 0))) << (8 * 0);
       this->cancel = u_cancel.real;
       offset += sizeof(this->cancel);
+      union {
+        int32_t real;
+        uint32_t base;
+      } u_raiseForDig;
+      u_raiseForDig.base = 0;
+      u_raiseForDig.base |= ((uint32_t) (*(inbuffer + offset + 0))) << (8 * 0);
+      u_raiseForDig.base |= ((uint32_t) (*(inbuffer + offset + 1))) << (8 * 1);
+      u_raiseForDig.base |= ((uint32_t) (*(inbuffer + offset + 2))) << (8 * 2);
+      u_raiseForDig.base |= ((uint32_t) (*(inbuffer + offset + 3))) << (8 * 3);
+      this->raiseForDig = u_raiseForDig.real;
+      offset += sizeof(this->raiseForDig);
      return offset;
     }
 
     const char * getType(){ return "command2ros/MovementCommand"; };
-    const char * getMD5(){ return "666f10daf673345d930607db5c7a5dec"; };
+    const char * getMD5(){ return "58ebc75092e3e84a094e5ec4c456befe"; };
 
   };
 
