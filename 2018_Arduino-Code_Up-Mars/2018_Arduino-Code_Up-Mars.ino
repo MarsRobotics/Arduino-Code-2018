@@ -90,14 +90,14 @@ const int BACKWARD_ART =5;     //Counter-Clockwise rotation for articulation whe
 
 //List of "States" the 6 wheels can be facing, 1024 is 360*, 0 is 0* 
 int stateStorage[6] =   {768, 256, 256, 256, 256, 768};  //orientation of wheels for the storage/collapsed position, (the position our robot will start RMC at)
-int stateTurning[6] =   {419, 768, 605, 605, 768, 419};  //orientation of wheels needed to turn the robot
+int stateTurning[6] =   {419, 768, 605, 605, 768-40, 419};  //orientation of wheels needed to turn the robot
 int stateDriveL2R[6] =  {512, 512, 512, 512, 512, 512}; //fancy driving sideways (in case we start up against a wall)
 
 //int stateDrive[6] =   {256, 768, 768, 768, 768, 256};  //orientation of wheels needed to drive straight-ish
-int stateDriveForward[6] =  {256-28, 768-2, 768+3,      768-18, 768-14, 256-13};  //orientation of wheels needed to drive straight->forward //asdf
+int stateDriveForward[6] =  {256-28, 768+4, 768+3,      768-5, 768-24, 256-13};  //orientation of wheels needed to drive straight->forward //asdf
 
 
-int stateDriveBackward[6] = {256-7, 768+16, 768-11,     768+3, 768-13, 256+0};  //orientation of wheels needed to drive straight->backward //asdf
+int stateDriveBackward[6] = {256-0, 768+16, 768+5,     768+5, 768-24, 256-3};  //orientation of wheels needed to drive straight->backward //asdf
 
 
 //Plus is C-CW+++ <-    -> Minus is CW---
@@ -134,9 +134,14 @@ int PUL=2; //define Pulse pin
 int DIR=5; //define Direction pin
 int ENA=3; //define Enable Pin
 
-//pulse rates, for stepper motor(s) to go Up and Down //zxcvb
-int pulseDown = 47;//for going down
+//pulse rates, for stepper motor(s) to go Up and Down //zxcvb //qwerty
 int pulseUp = 145;//for going up
+int pulseDw = 47;//for going down
+int pulseUpSlow = 250;//for going up (Slowly)
+int pulseDwSlow = 100;//for going down (Slowly)
+int pulseUpSlow = 400;//for going up (Very Slowly)
+int pulseDwSlow = 170;//for going down (Very Slowly)
+
 
 //these varables are for our methode "commandDumperAnolog()" <== we needed an anolog motor controler at comp. because our normal one busted(last minite fix)
 // ^^^ we copied our Anolog example from:    https://www.arduino.cc/reference/en/language/functions/analog-io/analogwrite/
@@ -168,7 +173,7 @@ ros::NodeHandle nh;   //Our Ros Node
 int rpiDriveDistance= 0;      //how far R-Pi wants Arduino to Drive Forward (negative for Drive Backwards)
 int rpiTurnDegrees  = 0;      //how far R-Pi wants Arduino to Turn Right    (negative for Turn Left)
 int rpiDigger =       0;      //1: to dig, 0: to stop, -1 to reverse digger
-boolean rpiDumper = false;    //true, to dump
+int rpiDumper = 0;    //true, to dump
 boolean rpiPackIn = false;    //true, to pack in our wheels (too the starting/storage state)
 boolean rpiPause =  false;    //true, to pause, stop all motors and acept no new command till [rpiPause =  false;] is sent
 boolean rpiEStop =  false;    //true, to Stop Forever
@@ -284,7 +289,7 @@ void setup() {
 
 int RPiActive = 1;    //If we want the Arduino to listen for commands from the R-Pi set "mode = RPiActive"
 int csTesting = 2;    //Arduino will run test code only (if "mode = csTesting" R-Pi will not connect to Arduino, and we will print to the console)
-int mode = csTesting; //what mode we want to run the code in
+int mode = RPiActive; //what mode we want to run the code in
 
 /*
  * Special Arduino Methode: Main loop, loops infinitly.
@@ -369,18 +374,24 @@ void loop() {
     ardSerialID = rpiSerialID;
     //for testing
 //    printArticulation();
-//    commandRunAnalogDumper(30);
-//    commandManualForward(1);
+    commandRunAnalogDumper(20);
+    delay(3000);
+//    commandManualForward(-1);
 //    delay(1000);
 //    commandManualForward(-1); //asdfg
-    commandRaise(-730); //zxcv
-    delay(500);
-    commandRaise(730);
-//    commandManualForward(0);
+//    commandRaise(-730); //zxcv
+//    delay(2000);
+//    commandRaise(730);
 //    commandRunAnalogDumper(50);
-//    delay(1000);
-    
+//    delay(2000);
+//
 //    commandRunAnalogDumper(0);
+//    commandRaise(-70);
+//    commandManualTurn(-1);
+    
+//    commandManualForward(-1); //asdfg
+//    delay(2000);
+//    stopAllMotor();
     
 //    runMotor(8, FORWARD, 30);
 //    delay(700); //1000 is a small turn
@@ -527,11 +538,12 @@ void commandDigger(int tempDiggerSpeed){
       //run the digger forward
       runMotor(14, BACKWARD, -newDiggerSpeed);
       msg2user("C#" + (String)ardSerialID + ", Digging Forward \n");
-    }else{
-      //stop the digger
-      runMotor(14, FORWARD, 0);
-      msg2user("C#" + (String)ardSerialID + ", Digging Stoped \n");
     }
+//    else{ //We decided to not stop the digger till the rpi-gives the "cancel" command //TODO
+//      //stop the digger
+//      runMotor(14, FORWARD, 0);
+//      msg2user("C#" + (String)ardSerialID + ", Digging Stoped \n");
+//    }
     
     //save the current state to memory (so we know when something changes)
     manualDigger = newDiggerSpeed;
@@ -548,8 +560,8 @@ void commandRunAnalogDumper(int newVal){
   if(newVal != 0){
     msg2user("C#" + (String)ardSerialID + ", Runing Dumper, ");
   }
-  
-  runAnalogMotor((float)newVal / -100.0, dumperPin);
+  float tempVal = -1*(float)newVal / (float)100.0;
+  runAnalogMotor(tempVal, dumperPin);
 }
 
 /**
@@ -560,6 +572,8 @@ void commandRunAnalogDumper(int newVal){
  * @param pin: the "pin number" the analog motor concects too, (in our case we only have 1 analog M.C. but thats what the nice man used)
  */
 void runAnalogMotor(float val, int pin){ //TODO
+  msg2user("val: " + (String)val + ", pin: " + (String)pin + ", ");
+  
   float newVal;
   int G_Z = 187;
   int MIN_MOTOR_SPEED = 75;
@@ -661,9 +675,9 @@ void commandRaise(int raiseDistance){
       digitalWrite(DIR,HIGH);
       digitalWrite(ENA,HIGH);
       digitalWrite(PUL,HIGH);
-      delayMicroseconds(pulseDown);
+      delayMicroseconds(pulseDw);
       digitalWrite(PUL,LOW);
-      delayMicroseconds(pulseDown);
+      delayMicroseconds(pulseDw);
     }
   }
   else if(raiseDistance <= -1){
@@ -696,59 +710,25 @@ void commandRaise(){
     msg2user("Lowering Digger ->");
   }
   
-  while(rpiRaise != 0 && rpiCancel == false){
+  while(rpiRaise != 0 && rpiCancel == false){ //qwerty
     nh.spinOnce();
+    int upSpeedPulse;
+    int dwSpeedPulse;
     
-//    //see if we have gotten a new command that is not raising and lowering
-//    //If we have a new rpiSerialID, we have a fresh mesage. So we have to execute the new command
-//    if(ardSerialID != rpiSerialID){
-//      ardSerialID = rpiSerialID;  //Update new SerialID
-//      
-//      //see if we need to cancel, pause, or EStop
-//      if(rpiCancel){
-//        //R-Pi asked for cancel, but where not running a command
-//        manualTurnCur = 0;  
-//        manualForwardCur = 0;
-//        manualDigger = 0;
-//        manualDumper = 0;
-//        msg2user("/t <<<Command Canceled>>> (in SM) \n");
-//        stopAllMotor();
-//      }else if(rpiEStop){
-//        commandEStop(rpiEStop);               //permently stop rover, and disables Arduino
-//      }else if(rpiPause){
-//        commandPause(rpiPause);               //Stops motors and waits till rpiPause==false
-//      }
-//      else{
-//        //if we don't want cancel,EStop, or Pause
-//        //Drive commands, Only executes one movement command, per new rpiSerialID (prevents potential conflicts)
-//        if(rpiDriveDistance != 0){
-//          commandDriveForward(rpiDriveDistance);//Automated drive forward X distance
-//        }else if(rpiTurnDegrees != 0){
-//          commandTurnRover(rpiTurnDegrees);     //Automated turn Rover X distance
-//        }else if(rpiPackIn){
-//          commandPackIn(rpiPackIn);             //Automated "PackIn" to our starting state
-//        }
-//        //Manual Drive Commands
-//        else if(rpiManual && rpiManualDrive != manualForwardCur){
-//          commandManualForward(rpiManualDrive); //Manual Command, will remain driving until mesage rpiManualDrive=0 is given
-//        }else if(rpiManual && rpiManualTurn != manualTurnCur){
-//          commandManualTurn(-rpiManualTurn);     //Manual Command, will remain turning until mesage rpiManualTurn=0 is given 
-//        }
-//        //Digger and Dumper Toggles
-//        if(rpiDigger != manualDigger){
-//          commandDigger(rpiDigger);             //Start, Reverse, or Stop Digger
-//        }else if(rpiDumper != manualDumper){
-//          msg2user("Trying to dump...");
-//          //commandDumper(rpiDumper);             //Start or Stop Dumper (methode our rover SHOULD use)
-//          //commandDumperAnolog(rpiDumper);         //Start or Stop Dumper (anolog mode because busted Motor Controler)
-//          manualDumper = rpiDumper;
-//          runDumperTest((float)rpiDumper * 0.01, dumperPin);
-//        }
-//      }
-//    }
+    if(abs(rpiRaise) <= 1){
+      upSpeedPulse = pulseUp;
+      dwSpeedPulse = pulseDw;
+    }else if(abs(rpiRaise) == 2){
+      upSpeedPulse = pulseUpSlow;
+      dwSpeedPulse = pluseDwSlow;
+    }else if(abs(rpiRaise) >= 3){
+      upSpeedPulse = pulseUpSlowest;
+      dwSpeedPulse = pluseDwSlowest;
+    }
+    
 
     //actualy Raise or Lowwer the Digger
-    if(rpiRaise == 1 && rpiCancel == false){
+    if(rpiRaise >= 1 && rpiCancel == false){
       //lower Digger
       for (int i=0; i<100; i++){
         digitalWrite(DIR,LOW);
@@ -759,15 +739,15 @@ void commandRaise(){
         delayMicroseconds(pulseUp);
       }
     }
-    else if(rpiRaise == -1 && rpiCancel == false){
+    else if(rpiRaise <= -1 && rpiCancel == false){
       //raise Digger
       for (int i=0; i<100; i++){
         digitalWrite(DIR,HIGH);
         digitalWrite(ENA,HIGH);
         digitalWrite(PUL,HIGH);
-        delayMicroseconds(pulseDown);
+        delayMicroseconds(pulseDw);
         digitalWrite(PUL,LOW);
-        delayMicroseconds(pulseDown);
+        delayMicroseconds(pulseDw);
       }
     }
   }
@@ -831,13 +811,15 @@ void commandPause(boolean newPause){
 
     if(rpiCancel == true){
       //let the whole program know we wish to cancel
-      msg2user("/t <<<Command Canceled>>> \n");
+      msg2user("/t <<<Command Canceled>>> (within Pause)\n");
       manualTurnCur = 0;  
       manualForwardCur = 0;
       manualDigger = 0;
       manualDumper = 0;
       stopAllMotor();
       ardCancel = true;
+      //attempting to be sure the command gets out of all known methodes //TODO
+      ardSerialID = -999;
     }
     
     //if rpiPause changes, re-allow motors to move
@@ -981,12 +963,14 @@ void commandManualTurn(int direction){
     msg2user("C#" + (String)ardSerialID + ", MANUAL: Turn Left \n");
     //get the Rover's wheels into turning position
     setAllArticulation(stateTurning);
+    setAllArticulation(stateTurning);
     //turn ClockWise
     activeTurn(FORWARD, turnSpeed);
   } 
   else if(direction == -1){
     msg2user("C#" + (String)ardSerialID + ", MANUAL: Turn Right \n");
     //get the Rover's wheels into turning position
+    setAllArticulation(stateTurning);
     setAllArticulation(stateTurning);
     //turn Counter Clock
     activeTurn(BACKWARD, turnSpeed);
@@ -1321,6 +1305,21 @@ boolean setMotorArticulation(int ID, int degrees){
     stopMotor(ID-6);
     return true;
   }
+//  //if the motor is faily close to the target direction, turn it more slowly //TODO <===================================
+//  else if(abs(articulation/*(ID-6)*/  - degrees) < (20+turnError)){
+//    //if the motor is too far, go back (but slowly because we are close)
+//    if(articulation/*(ID-6)*/ > degrees){
+//      runMotor(ID, FORWARD, turnSpeed/2); //slower speed
+//      runMotor(ID-6, BACKWARD, (int)(turnSpeed*artHelperSpeed/2));
+//      return false;
+//    }
+//    //if the motor isn't far enough, go forward (but slowly because we are close)
+//    else{
+//      runMotor(ID, BACKWARD, turnSpeed/2); //slower speed
+//      runMotor(ID-6, FORWARD, (int)(turnSpeed*artHelperSpeed/2));
+//      return false;
+//    }
+//  }
   //if the motor is too far, go back
   else if(articulation/*(ID-6)*/ > degrees){
     runMotor(ID, FORWARD, turnSpeed);
@@ -1514,13 +1513,16 @@ long checkForInterupt(){
     }
     else if(rpiCancel){
       //let the whole program know we wish to cancel
-      msg2user("/t <<<Command Canceled>>> \n");
+      msg2user("/t <<<Command Canceled>>> (Interupt)\n");
+      //saveing to memory that we are not 
       manualTurnCur = 0;  
       manualForwardCur = 0;
       manualDigger = 0;
       manualDumper = 0; 
       stopAllMotor();
       ardCancel = true;
+      //attempting to be sure the command gets out of all known methodes //TODO
+      ardSerialID = -999;
     }
   }
 
