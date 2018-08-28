@@ -25,6 +25,8 @@
  * ros publisher:   http://wiki.ros.org/rosserial_arduino/Tutorials/Hello%20World
  * 
  * @author: Ryan Kane, ryanjkane911@yahoo.com
+ * 
+ * NOTE: To reset wheels to drive straight, see "wheelTrueZero", "wheelCorectFactor", "stateDriveForward, and "stateDriveBackward"
  */
 
 //====================================================================================================================================================================
@@ -51,6 +53,9 @@ boolean wheelDirection[15] = {false, true, false, true, false, false,   //Drive 
                               true,  true, false};                    //Misc motors
 
 //articulation sensors's true zero relative to our ideal true zero on rover (- CounterClock, + ClockWise)
+//change these values in testing to make for straight driving
+//tell the robot to drive forward or backward and check how far off each wheel is from straight. Increase or decrease the values based on this.
+//Note: motors go front to back, right to left. Orient yourself by standing at the back of the robot facing forward
 const int wheelTrueZero[6] = {-30, 51, -34, -15, -5, 0};
 
 //Serial1 on pins 19 (RX) and 18 (TX), Serial2 on pins 17 (RX) and 16 (TX), Serial3 on pins 15 (RX) and 14 (TX)
@@ -60,6 +65,8 @@ const int wheelPinType[15] = {1, 1, 1, 1, 1, 1,
                               2, 1, 1};
 
 //Speed modifier for wheels, (because wheels turn at diffrent speeds for unknown reasons), so they turn at same speed //asdf
+//also change these values in testing for straight driving
+//put a piece of tape on each wheel 
 double wheelCorectFactor[15] =  {1.11, 1.20, 1.12, 1.07, 1.05, 1.07, //Drive motors
                                  2.00, 1.15, 1.30, 1.15, 1.10, 1.20,  //articulation motors
                                  1.0, 1.0, 1.0};                      //Misc motors
@@ -94,9 +101,10 @@ int stateTurning[6] =   {419, 768, 605, 605, 768-40, 419};  //orientation of whe
 int stateDriveL2R[6] =  {512, 512, 512, 512, 512, 512}; //fancy driving sideways (in case we start up against a wall)
 
 //int stateDrive[6] =   {256, 768, 768, 768, 768, 256};  //orientation of wheels needed to drive straight-ish
+//change in testing to improve accuracy
 int stateDriveForward[6] =  {256-28, 768+4, 768+3,      768-5, 768-24, 256-13};  //orientation of wheels needed to drive straight->forward //asdf
 
-
+//change in testing to improve accuracy
 int stateDriveBackward[6] = {256-0, 768+16, 768+5,     768+5, 768-24, 256-3};  //orientation of wheels needed to drive straight->backward //asdf
 
 
